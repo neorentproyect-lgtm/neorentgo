@@ -29,6 +29,10 @@ export async function signUpUser(username: string, password: string): Promise<{ 
 }
 export async function signOutUser() { await supabase.auth.signOut(); }
 
+export async function signInWithGoogle() {
+  await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: typeof window !== "undefined" ? window.location.origin : undefined } });
+}
+
 export async function updateRoles(roles: string[]) {
   const { data } = await supabase.auth.getUser();
   if (data.user) await supabase.from("profiles").update({ roles }).eq("id", data.user.id);

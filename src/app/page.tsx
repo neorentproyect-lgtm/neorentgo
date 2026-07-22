@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ACCENT, ROLES, RoleId } from "@/lib/app-data";
 import {
-  Application, Profile, PropRow, resolveApplication, signInUser, signOutUser, signUpUser,
+  Application, Profile, PropRow, resolveApplication, signInUser, signInWithGoogle, signOutUser, signUpUser,
   submitApplication, submitProperty, submitValidation, updateRoles,
   useActiveProperties, useCandidates, useMyApplications, useMyProperties, useMyValidation, useProfile,
 } from "@/lib/store";
@@ -447,8 +447,13 @@ function LoginModal({ onClose }: { onClose: () => void }) {
       <div className="soft-lg w-full max-w-sm rounded-3xl border border-stone-200 bg-white p-7" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2.5"><div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-sm font-display font-bold text-white">N</div><span className="font-display text-lg font-semibold text-stone-900">Neo Rent Go</span></div>
         <h2 className="mt-4 font-display text-2xl font-semibold text-stone-900">{mode === "login" ? "Ingresá a tu cuenta" : "Creá tu cuenta"}</h2>
-        <p className="mt-1 text-sm text-stone-500">Usuario y contraseña por ahora — Google llega pronto.</p>
-        <div className="mt-6 space-y-3">
+        <p className="mt-1 text-sm text-stone-500">Entrá con Google, o con usuario y contraseña.</p>
+        <button onClick={() => signInWithGoogle()} className="mt-5 flex w-full items-center justify-center gap-2.5 rounded-xl border border-stone-200 bg-white py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-50">
+          <svg className="h-4 w-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1Z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38Z"/></svg>
+          Continuar con Google
+        </button>
+        <div className="my-4 flex items-center gap-3 text-xs text-stone-400"><div className="h-px flex-1 bg-stone-200" />o con usuario<div className="h-px flex-1 bg-stone-200" /></div>
+        <div className="space-y-3">
           <Field label="Usuario" value={u} onChange={(v) => { setU(v); setErr(""); }} placeholder="maxiprueba" />
           <div><label className="mb-1 block text-xs font-medium text-stone-500">Contraseña</label><input type="password" value={pw} onChange={(e) => { setPw(e.target.value); setErr(""); }} placeholder="••••••••" onKeyDown={(e) => e.key === "Enter" && submit()} className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-900 outline-none placeholder:text-stone-400 focus:border-emerald-400 focus:bg-white" /></div>
           {err && <p className="text-xs text-rose-500">{err}</p>}
