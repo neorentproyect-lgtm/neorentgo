@@ -317,7 +317,7 @@ function RoleDashboard({ role, profile, onPublish }: { role: RoleId; profile: Pr
         {isProp && <button onClick={onPublish} className="flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500">{I.plus("h-4 w-4")} Publicar propiedad</button>}
       </div>
 
-      <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-3">{summary.map(([n, l]) => (<div key={l} className="soft rounded-2xl border border-stone-200 bg-white p-4"><div className={`font-display text-2xl font-semibold ${a.text}`}>{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
+      {(isProp || isInq) && <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-3">{summary.map(([n, l]) => (<div key={l} className="soft rounded-2xl border border-stone-200 bg-white p-4"><div className={`font-display text-2xl font-semibold ${a.text}`}>{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>}
 
       {isProp && (
         <div className="mt-7 grid gap-6 lg:grid-cols-2">

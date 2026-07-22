@@ -2,19 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { PropRow, ValRequest, resolveProperty, resolveValidation, signInUser, signOutUser, usePendingApprovals } from "@/lib/store";
+import { PropRow, ValRequest, resolveProperty, resolveValidation, signInUser, signOutUser, useAdminStats, usePendingApprovals, useRecentEvents } from "@/lib/store";
 
-interface Event { id: string; text: string; time: string; tone: "info" | "ok" | "warn" }
-type Kind = "dni" | "propiedad" | "martillero" | "alp";
-
-const now = () => new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+type Kind = "dni" | "propiedad";
+const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+const nowClock = () => new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const fmt = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0);
-
-const FEED_POOL: [string, Event["tone"]][] = [
-  ["Nuevo inquilino registrado · @lu***", "info"], ["Carta de presentación completada", "info"],
-  ["Garante aceptó invitación", "ok"], ["Visita agendada · ALP asignado", "info"],
-  ["Contrato en revisión · martillero", "info"], ["Pago acreditado en custodia (PSP)", "ok"],
-];
 
 export default function Administer() {
   const [authed, setAuthed] = useState(false);
@@ -51,36 +44,26 @@ function Gate({ onOk }: { onOk: () => void }) {
 
 function Dashboard() {
   const { vals, props } = usePendingApprovals(true);
-  const [clock, setClock] = useState(now());
-  const [feed, setFeed] = useState<Event[]>([]);
+  const st = useAdminStats();
+  const events = useRecentEvents();
+  const [clock, setClock] = useState(nowClock());
   const [registry, setRegistry] = useState<{ id: string; action: string; time: string }[]>([]);
-  const [staticPending, setStaticPending] = useState([
-    { id: "m1", kind: "martillero" as Kind, title: "Est. Gómez · Matrícula 1123", subtitle: "Verificación manual de matrícula" },
-    { id: "al1", kind: "alp" as Kind, title: "Carlos M. · ALP", subtitle: "Invitación a team de M. Ríos" },
-  ]);
   const idRef = useRef(0);
 
-  useEffect(() => {
-    const c = setInterval(() => setClock(now()), 1000);
-    const f = setInterval(() => { const [text, tone] = FEED_POOL[Math.floor(Math.random() * FEED_POOL.length)]; setFeed((p) => [{ id: `e${idRef.current++}`, text, time: now(), tone }, ...p].slice(0, 14)); }, 4000);
-    return () => { clearInterval(c); clearInterval(f); };
-  }, []);
+  useEffect(() => { const c = setInterval(() => setClock(nowClock()), 1000); return () => clearInterval(c); }, []);
 
-  const log = (action: string, ok: boolean, title: string) => {
-    setRegistry((p) => [{ id: `r${idRef.current++}`, action, time: now() }, ...p].slice(0, 20));
-    setFeed((p) => [{ id: `e${idRef.current++}`, text: `${ok ? "✔ Aprobado" : "✘ Rechazado"}: ${title}`, time: now(), tone: (ok ? "ok" : "warn") as Event["tone"] }, ...p].slice(0, 14));
-  };
+  const log = (action: string) => setRegistry((p) => [{ id: `r${idRef.current++}`, action, time: nowClock() }, ...p].slice(0, 20));
 
   interface Row { key: string; kind: Kind; title: string; subtitle: string; resolve: (ok: boolean) => void }
   const rows: Row[] = [
-    ...vals.map((r: ValRequest): Row => ({ key: r.id, kind: "dni", title: `${r.name} · DNI ${r.dni ?? ""}`, subtitle: `CUIL ${r.cuil ?? "—"} · valida identidad`, resolve: (ok) => { resolveValidation(r, ok); log(`${ok ? "Aprobó" : "Rechazó"} DNI de ${r.name}`, ok, r.name); } })),
-    ...props.map((p: PropRow): Row => ({ key: p.id, kind: "propiedad", title: p.title, subtitle: `${p.zona ?? ""} · ${fmt(p.price)}`, resolve: (ok) => { resolveProperty(p.id, ok); log(`${ok ? "Habilitó" : "Rechazó"} propiedad · ${p.title}`, ok, p.title); } })),
-    ...staticPending.map((s): Row => ({ key: s.id, kind: s.kind, title: s.title, subtitle: s.subtitle, resolve: (ok) => { setStaticPending((prev) => prev.filter((x) => x.id !== s.id)); log(`${ok ? "Aprobó" : "Rechazó"} ${s.kind} · ${s.title}`, ok, s.title); } })),
+    ...vals.map((r: ValRequest): Row => ({ key: r.id, kind: "dni", title: `${r.name} · DNI ${r.dni ?? ""}`, subtitle: `CUIL ${r.cuil ?? "—"} · valida identidad`, resolve: (ok) => { resolveValidation(r, ok); log(`${ok ? "Aprobó" : "Rechazó"} DNI de ${r.name}`); } })),
+    ...props.map((p: PropRow): Row => ({ key: p.id, kind: "propiedad", title: p.title, subtitle: `${p.zona ?? ""} · ${fmt(p.price)}`, resolve: (ok) => { resolveProperty(p.id, ok); log(`${ok ? "Habilitó" : "Rechazó"} propiedad · ${p.title}`); } })),
   ];
 
-  const stats: [string, string][] = [["Usuarios", "1.284"], ["Propiedades activas", "312"], ["En aprobación", String(rows.length)], ["Operaciones", "47"], ["Martilleros", "9"]];
+  const stats: [string, number][] = [["Usuarios", st.usuarios], ["Propiedades activas", st.activas], ["Candidatos", st.candidatos], ["En aprobación", rows.length]];
+  const kindClass: Record<Kind, string> = { dni: "bg-violet-100 text-violet-700", propiedad: "bg-sky-100 text-sky-700" };
   const toneClass = { info: "text-sky-600", ok: "text-emerald-600", warn: "text-amber-600" };
-  const kindClass: Record<Kind, string> = { dni: "bg-violet-100 text-violet-700", propiedad: "bg-sky-100 text-sky-700", martillero: "bg-emerald-100 text-emerald-700", alp: "bg-amber-100 text-amber-700" };
+  const toneDot = { info: "bg-sky-500", ok: "bg-emerald-500", warn: "bg-amber-500" };
 
   return (
     <div className="relative min-h-screen">
@@ -93,7 +76,7 @@ function Dashboard() {
       </header>
 
       <div className="mx-auto max-w-6xl px-5 py-8">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">{stats.map(([l, v]) => (<div key={l} className="soft rounded-2xl border border-stone-200 bg-white p-4"><div className="font-display text-2xl font-semibold text-stone-900">{v}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{stats.map(([l, v]) => (<div key={l} className="soft rounded-2xl border border-stone-200 bg-white p-4"><div className="font-display text-2xl font-semibold text-stone-900 tabular-nums">{v}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
           <section>
@@ -109,7 +92,7 @@ function Dashboard() {
               ))}
             </div>
 
-            <h2 className="mb-4 mt-8 font-display text-xl font-semibold text-stone-900">Registro (auditable)</h2>
+            <h2 className="mb-4 mt-8 font-display text-xl font-semibold text-stone-900">Registro de esta sesión</h2>
             <div className="soft overflow-hidden rounded-2xl border border-stone-200 bg-white">
               {registry.length === 0 ? (<p className="p-5 text-sm text-stone-500">Sin acciones todavía. Aprobá o rechazá algo para verlo acá.</p>) : (
                 <table className="w-full text-sm"><tbody>{registry.map((r) => (<tr key={r.id} className="border-b border-stone-100 last:border-0"><td className="px-4 py-2.5 font-display text-xs tabular-nums text-stone-400">{r.time}</td><td className="px-4 py-2.5 font-medium text-emerald-700">@administer</td><td className="px-4 py-2.5 text-stone-600">{r.action}</td></tr>))}</tbody></table>
@@ -118,10 +101,11 @@ function Dashboard() {
           </section>
 
           <section>
-            <h2 className="mb-4 font-display text-xl font-semibold text-stone-900">Seguimiento en vivo</h2>
+            <h2 className="mb-1 font-display text-xl font-semibold text-stone-900">Actividad reciente</h2>
+            <p className="mb-4 text-sm text-stone-500">Eventos reales del sistema.</p>
             <div className="soft space-y-2.5 rounded-2xl border border-stone-200 bg-white p-4">
-              {feed.length === 0 && <p className="py-6 text-center text-sm text-stone-500">Escuchando eventos…</p>}
-              {feed.map((e) => (<div key={e.id} className="animate-fadeUp flex items-start gap-3 rounded-xl bg-stone-50 px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${e.tone === "ok" ? "bg-emerald-500" : e.tone === "warn" ? "bg-amber-500" : "bg-sky-500"}`} /><div className="min-w-0 flex-1"><p className={`text-sm ${toneClass[e.tone]}`}>{e.text}</p><p className="font-display text-[11px] tabular-nums text-stone-400">{e.time}</p></div></div>))}
+              {events.length === 0 && <p className="py-6 text-center text-sm text-stone-500">Sin actividad todavía.</p>}
+              {events.map((e) => (<div key={e.id} className="flex items-start gap-3 rounded-xl bg-stone-50 px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${toneDot[e.tone]}`} /><div className="min-w-0 flex-1"><p className={`text-sm ${toneClass[e.tone]}`}>{e.text}</p><p className="font-display text-[11px] tabular-nums text-stone-400">{time(e.at)}</p></div></div>))}
             </div>
           </section>
         </div>

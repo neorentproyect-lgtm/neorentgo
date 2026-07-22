@@ -171,3 +171,57 @@ export function useCandidates(ownerId: string | undefined): Application[] {
 export async function resolveApplication(id: string, status: "accepted" | "rejected") {
   await supabase.from("applications").update({ status }).eq("id", id);
 }
+
+/* ---------- ADMIN: stats y eventos REALES ---------- */
+export function useAdminStats(): { usuarios: number; activas: number; candidatos: number; enAprobacion: number } {
+  const [s, setS] = useState({ usuarios: 0, activas: 0, candidatos: 0, enAprobacion: 0 });
+  useEffect(() => {
+    const load = async () => {
+      const [u, a, c, pv, pp] = await Promise.all([
+        supabase.from("profiles").select("*", { count: "exact", head: true }),
+        supabase.from("properties").select("*", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("applications").select("*", { count: "exact", head: true }),
+        supabase.from("validation_requests").select("*", { count: "exact", head: true }).eq("status", "pending"),
+        supabase.from("properties").select("*", { count: "exact", head: true }).eq("status", "pending"),
+      ]);
+      setS({ usuarios: u.count ?? 0, activas: a.count ?? 0, candidatos: c.count ?? 0, enAprobacion: (pv.count ?? 0) + (pp.count ?? 0) });
+    };
+    load();
+    const ch = supabase.channel("stats")
+      .on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "validation_requests" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "applications" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  return s;
+}
+
+export interface RecentEvent { id: string; text: string; tone: "info" | "ok" | "warn"; at: string }
+export function useRecentEvents(): RecentEvent[] {
+  const [ev, setEv] = useState<RecentEvent[]>([]);
+  useEffect(() => {
+    const load = async () => {
+      const [v, p, ap] = await Promise.all([
+        supabase.from("validation_requests").select("id,name,status,created_at").order("created_at", { ascending: false }).limit(8),
+        supabase.from("properties").select("id,title,status,created_at").order("created_at", { ascending: false }).limit(8),
+        supabase.from("applications").select("id,created_at,property:properties(title)").order("created_at", { ascending: false }).limit(8),
+      ]);
+      const out: RecentEvent[] = [];
+      (v.data ?? []).forEach((x: { id: string; name: string; status: string; created_at: string }) => out.push({ id: "v" + x.id, text: `Validación DNI · ${x.name} (${x.status})`, tone: x.status === "validated" ? "ok" : x.status === "rejected" ? "warn" : "info", at: x.created_at }));
+      (p.data ?? []).forEach((x: { id: string; title: string; status: string; created_at: string }) => out.push({ id: "p" + x.id, text: `Propiedad · ${x.title} (${x.status})`, tone: x.status === "active" ? "ok" : "info", at: x.created_at }));
+      (ap.data ?? []).forEach((x: { id: string; created_at: string; property?: { title?: string } | { title?: string }[] }) => { const pr = Array.isArray(x.property) ? x.property[0] : x.property; out.push({ id: "a" + x.id, text: `Candidato · ${pr?.title ?? "propiedad"}`, tone: "info", at: x.created_at }); });
+      out.sort((a, b) => (a.at < b.at ? 1 : -1));
+      setEv(out.slice(0, 12));
+    };
+    load();
+    const ch = supabase.channel("events")
+      .on("postgres_changes", { event: "*", schema: "public", table: "validation_requests" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "applications" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  return ev;
+}
