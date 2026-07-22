@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { PropRow, ValRequest, resolveProperty, resolveValidation, signInUser, signOutUser, useAdminStats, usePendingApprovals, useRecentEvents } from "@/lib/store";
+import { PropRow, ValRequest, kycSignedUrl, resolveProperty, resolveValidation, signInUser, signOutUser, useAdminStats, usePendingApprovals, useRecentEvents } from "@/lib/store";
 
 type Kind = "dni" | "propiedad";
 const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
@@ -54,9 +54,10 @@ function Dashboard() {
 
   const log = (action: string) => setRegistry((p) => [{ id: `r${idRef.current++}`, action, time: nowClock() }, ...p].slice(0, 20));
 
-  interface Row { key: string; kind: Kind; title: string; subtitle: string; resolve: (ok: boolean) => void }
+  const openDoc = async (path?: string) => { if (!path) return; const url = await kycSignedUrl(path); if (url) window.open(url, "_blank"); };
+  interface Row { key: string; kind: Kind; title: string; subtitle: string; front?: string; back?: string; resolve: (ok: boolean) => void }
   const rows: Row[] = [
-    ...vals.map((r: ValRequest): Row => ({ key: r.id, kind: "dni", title: `${r.name} · DNI ${r.dni ?? ""}`, subtitle: `CUIL ${r.cuil ?? "—"} · valida identidad`, resolve: (ok) => { resolveValidation(r, ok); log(`${ok ? "Aprobó" : "Rechazó"} DNI de ${r.name}`); } })),
+    ...vals.map((r: ValRequest): Row => ({ key: r.id, kind: "dni", title: `${r.name} · DNI ${r.dni ?? ""}`, subtitle: `CUIL ${r.cuil ?? "—"} · valida identidad`, front: r.dni_front, back: r.dni_back, resolve: (ok) => { resolveValidation(r, ok); log(`${ok ? "Aprobó" : "Rechazó"} DNI de ${r.name}`); } })),
     ...props.map((p: PropRow): Row => ({ key: p.id, kind: "propiedad", title: p.title, subtitle: `${p.zona ?? ""} · ${fmt(p.price)}`, resolve: (ok) => { resolveProperty(p.id, ok); log(`${ok ? "Habilitó" : "Rechazó"} propiedad · ${p.title}`); } })),
   ];
 
@@ -86,7 +87,7 @@ function Dashboard() {
               {rows.length === 0 && <p className="soft rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-500">Todo al día ✦</p>}
               {rows.map((r) => (
                 <div key={r.key} className="animate-fadeUp soft flex items-center justify-between gap-4 rounded-2xl border border-stone-200 bg-white p-4">
-                  <div><span className={`mb-1.5 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${kindClass[r.kind]}`}>{r.kind}</span><p className="font-medium text-stone-900">{r.title}</p><p className="text-xs text-stone-500">{r.subtitle}</p></div>
+                  <div><span className={`mb-1.5 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ${kindClass[r.kind]}`}>{r.kind}</span><p className="font-medium text-stone-900">{r.title}</p><p className="text-xs text-stone-500">{r.subtitle}</p>{(r.front || r.back) && <div className="mt-1.5 flex gap-2">{r.front && <button onClick={() => openDoc(r.front)} className="rounded-lg bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-200">Ver frente</button>}{r.back && <button onClick={() => openDoc(r.back)} className="rounded-lg bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700 hover:bg-violet-200">Ver dorso</button>}</div>}</div>
                   <div className="flex shrink-0 gap-2"><button onClick={() => r.resolve(true)} className="rounded-lg bg-emerald-600 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500">Aprobar</button><button onClick={() => r.resolve(false)} className="rounded-lg border border-stone-200 px-3.5 py-2 text-sm font-semibold text-stone-600 transition hover:border-rose-300 hover:text-rose-600">Rechazar</button></div>
                 </div>
               ))}

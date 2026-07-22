@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { ACCENT, ROLES, RoleId } from "@/lib/app-data";
 import {
   Application, Profile, PropRow, resolveApplication, signInUser, signInWithGoogle, signOutUser, signUpUser,
-  submitApplication, submitProperty, submitValidation, updateRoles,
+  submitApplication, submitProperty, submitValidation, updateRoles, uploadKyc,
   useActiveProperties, useCandidates, useMyApplications, useMyProperties, useMyValidation, useProfile,
 } from "@/lib/store";
 
@@ -98,11 +98,8 @@ function TopBar(props: {
   const [menu, setMenu] = useState(false);
   const [bell, setBell] = useState(false);
   const current = view.type === "role" ? view.role : null;
-  const navItems: { label: string; onClick: () => void }[] =
-    view.type === "marketplace" ? [{ label: "Alquilar", onClick: goHome }, { label: "Publicar", onClick: onPublish }]
-    : view.type === "global" ? [{ label: "Marketplace", onClick: goHome }]
-    : [{ label: "Panel global", onClick: goGlobal }, ...(view.role === "propietario" ? [{ label: "Publicar propiedad", onClick: onPublish }] : [])];
   const inactive = ROLE_IDS.filter((r) => !roles.includes(r));
+  void onPublish; void goGlobal;
 
   return (
     <header className="sticky top-0 z-30 border-b border-stone-200/80 bg-[#f7f6f2]/80 backdrop-blur-xl">
@@ -112,10 +109,6 @@ function TopBar(props: {
           <span className="font-display text-lg font-semibold tracking-tight text-stone-900">Neo Rent <span className="text-emerald-600">Go</span></span>
           {current && <span className={`ml-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${ACCENT[current].soft} ${ACCENT[current].text}`}>{ROLES[current].emoji} {ROLES[current].label}</span>}
         </button>
-
-        <nav className="hidden items-center gap-7 text-sm font-medium text-stone-500 md:flex">
-          {navItems.map((n) => <button key={n.label} onClick={n.onClick} className="transition hover:text-stone-900">{n.label}</button>)}
-        </nav>
 
         {!profile ? (
           <button onClick={onLogin} className="rounded-full bg-stone-900 px-5 py-2 text-sm font-semibold text-white transition hover:bg-stone-800">Ingresar</button>
@@ -199,15 +192,14 @@ function Marketplace({ tier, openLogin }: { tier: "anon" | "account" | "validate
             {q && <button onClick={() => setQ("")} className="rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-semibold text-stone-500 hover:text-stone-800">Limpiar</button>}
             <span className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white">{I.search("h-4 w-4")} {list.length}</span>
           </div>
-          <div className="mt-10 flex gap-10">{[["−30%", "comisión"], ["100%", "respaldo martillero"], [String(all.length), "propiedades"]].map(([n, l]) => (<div key={l}><div className="font-display text-3xl font-semibold text-stone-900">{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
+          <div className="mt-10 flex gap-10">{[["−30%", "comisión más baja"], [String(all.length), "propiedades activas"]].map(([n, l]) => (<div key={l}><div className="font-display text-3xl font-semibold text-stone-900">{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
         </div>
         {featured && (
           <div className="animate-floaty">
             <div className="soft-lg overflow-hidden rounded-[2rem] border border-stone-200 bg-white"><div className="relative h-[25rem]">
               <img src={featured.image} alt={featured.title} className="h-full w-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
-              <span className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white">{I.check("h-3.5 w-3.5")} Verificado</span>
-              <div className="absolute bottom-5 left-5 right-5"><p className="text-xs text-white/80">{featured.zona} · Neuquén</p><h3 className="font-display text-2xl font-semibold text-white">{featured.title}</h3><div className="mt-2 flex items-center justify-between"><span className="font-display text-xl font-semibold text-white">{fmt(featured.price)} <span className="text-sm font-normal text-white/80">/mes</span></span><span className="flex items-center gap-1 text-sm font-semibold text-amber-300">{I.star("h-4 w-4")} {featured.rating}</span></div></div>
+              <div className="absolute bottom-5 left-5 right-5"><p className="text-xs text-white/80">{featured.zona} · Neuquén</p><h3 className="font-display text-2xl font-semibold text-white">{featured.title}</h3><div className="mt-2"><span className="font-display text-xl font-semibold text-white">{fmt(featured.price)} <span className="text-sm font-normal text-white/80">/mes</span></span></div></div>
             </div></div>
           </div>
         )}
@@ -253,15 +245,13 @@ function PropertyCard({ p, tier, openLogin }: { p: PropRow; tier: "anon" | "acco
       <div className="relative h-56 overflow-hidden">
         {p.image ? <img src={p.image} alt={p.title} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : <div className="h-full w-full bg-gradient-to-br from-emerald-200 to-teal-300" />}
         <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold capitalize text-stone-700 backdrop-blur">{p.type}</span>
-        <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">{I.check("h-3.5 w-3.5")} Martillero</span>
-        {p.rating ? <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-amber-600 backdrop-blur">{I.star("h-3.5 w-3.5")} {p.rating}</span> : null}
       </div>
       <div className="p-5">
         <h3 className="font-display text-lg font-semibold leading-snug text-stone-900">{p.title}</h3>
         <p className="mt-1 flex items-center gap-1.5 text-sm text-stone-500">{I.pin("h-3.5 w-3.5 shrink-0")}<span>{p.zona}{showPrice && p.address ? ` · ${p.address}` : ""}</span></p>
         <div className="mt-4 flex flex-wrap gap-4 text-xs text-stone-400">{p.type === "vivienda" && <span className="flex items-center gap-1.5">{I.bed("h-4 w-4")} {p.beds || "Mono"}</span>}<span className="flex items-center gap-1.5">{I.bath("h-4 w-4")} {p.baths}</span>{p.m2 ? <span className="flex items-center gap-1.5">{I.ruler("h-4 w-4")} {p.m2} m²</span> : null}{p.cochera && <span className="flex items-center gap-1.5">{I.car("h-4 w-4")} Cochera</span>}</div>
         <div className="mt-5 flex items-end justify-between border-t border-stone-100 pt-4">
-          {showPrice ? (<div><div className="font-display text-xl font-semibold text-emerald-700">{fmt(p.price)}</div><div className="text-xs text-stone-400">{p.agent ? `${p.agent} · ` : ""}por mes</div></div>) : (<div className="flex items-center gap-2 text-sm font-medium text-stone-400">{I.lock("h-4 w-4")} Ingresá para ver precio</div>)}
+          {showPrice ? (<div><div className="font-display text-xl font-semibold text-emerald-700">{fmt(p.price)}</div><div className="text-xs text-stone-400">por mes</div></div>) : (<div className="flex items-center gap-2 text-sm font-medium text-stone-400">{I.lock("h-4 w-4")} Ingresá para ver precio</div>)}
           {state === "done" ? (<span className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">Contactado ✓</span>)
           : (<button onClick={contact} disabled={state === "busy"} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${canContact ? "bg-emerald-600 text-white hover:bg-emerald-500" : "border border-stone-200 text-stone-500 hover:text-stone-800"}`}>{state === "busy" ? "…" : canContact ? "Contactar" : tier === "anon" ? "Ingresar" : "Validá"}</button>)}
         </div>
@@ -359,20 +349,32 @@ function ModalShell({ title, subtitle, children, onClose }: { title: string; sub
   return (<div className="fixed inset-0 z-50 grid place-items-center overflow-auto bg-stone-900/30 p-4 backdrop-blur-sm" onClick={onClose}><div className="soft-lg my-8 w-full max-w-lg rounded-3xl border border-stone-200 bg-white p-7" onClick={(e) => e.stopPropagation()}><h2 className="font-display text-2xl font-semibold text-stone-900">{title}</h2><p className="mt-1 text-sm text-stone-500">{subtitle}</p>{children}</div></div>);
 }
 
+function FileDrop({ label, file, onFile }: { label: string; file: File | null; onFile: (f: File | null) => void }) {
+  return (
+    <label className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-3 py-5 text-center text-sm font-medium transition ${file ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-stone-300 text-stone-500 hover:border-stone-400"}`}>
+      <input type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      <span>{file ? `✓ ${file.name.length > 16 ? file.name.slice(0, 16) + "…" : file.name}` : `📷 ${label}`}</span>
+    </label>
+  );
+}
+
 function DniModal({ onClose }: { onClose: () => void }) {
   const [f, setF] = useState({ nombre: "", segundo: "", apellido: "", nacimiento: "", origen: "", residencia: "", dni: "", cuil: "" });
-  const [scan, setScan] = useState({ frente: false, dorso: false });
+  const [front, setFront] = useState<File | null>(null);
+  const [back, setBack] = useState<File | null>(null);
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const up = (k: keyof typeof f) => (v: string) => { setF({ ...f, [k]: v }); setErr(""); };
   const submit = async () => {
     if (!f.nombre || !f.apellido || !f.dni || !f.cuil) { setErr("Completá nombre, apellido, DNI y CUIL."); return; }
-    if (!scan.frente || !scan.dorso) { setErr("Adjuntá el escaneo de ambas caras del DNI."); return; }
-    setBusy(true);
-    await submitValidation({ name: `${f.nombre} ${f.apellido}`.trim(), dni: f.dni, cuil: f.cuil, nacimiento: f.nacimiento, origen: f.origen, residencia: f.residencia });
+    if (!front || !back) { setErr("Subí la foto del frente y del dorso del DNI."); return; }
+    setBusy(true); setErr("");
+    const [pf, pb] = await Promise.all([uploadKyc(front, "front"), uploadKyc(back, "back")]);
+    if (!pf || !pb) { setBusy(false); setErr("No se pudieron subir las imágenes. Reintentá."); return; }
+    await submitValidation({ name: `${f.nombre} ${f.apellido}`.trim(), dni: f.dni, cuil: f.cuil, nacimiento: f.nacimiento, origen: f.origen, residencia: f.residencia, dni_front: pf, dni_back: pb });
     onClose();
   };
   return (
-    <ModalShell title="Validar identidad (DNI)" subtitle="Se envía al panel del sistema para aprobación manual." onClose={onClose}>
+    <ModalShell title="Validar identidad (DNI)" subtitle="Subí las fotos de tu DNI. Se guardan cifradas y las revisa el sistema para aprobar." onClose={onClose}>
       <div className="mt-5 grid grid-cols-2 gap-3">
         <Field label="Nombre" value={f.nombre} onChange={up("nombre")} placeholder="Maxi" />
         <Field label="Segundo nombre (opc.)" value={f.segundo} onChange={up("segundo")} />
@@ -384,10 +386,11 @@ function DniModal({ onClose }: { onClose: () => void }) {
         <Field label="CUIL" value={f.cuil} onChange={up("cuil")} placeholder="20-40123456-3" />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        {(["frente", "dorso"] as const).map((c) => (<button key={c} onClick={() => setScan({ ...scan, [c]: true })} className={`rounded-xl border-2 border-dashed px-3 py-4 text-sm font-medium transition ${scan[c] ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-stone-300 text-stone-500 hover:border-stone-400"}`}>{scan[c] ? "✓ Adjuntado" : `📷 Escanear ${c}`}</button>))}
+        <FileDrop label="Foto del frente" file={front} onFile={(x) => { setFront(x); setErr(""); }} />
+        <FileDrop label="Foto del dorso" file={back} onFile={(x) => { setBack(x); setErr(""); }} />
       </div>
       {err && <p className="mt-3 text-xs text-rose-500">{err}</p>}
-      <div className="mt-6 flex gap-3"><button onClick={onClose} className="flex-1 rounded-xl border border-stone-200 py-3 text-sm font-semibold text-stone-600 hover:bg-stone-50">Cancelar</button><button onClick={submit} disabled={busy} className="flex-1 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{busy ? "Enviando…" : "Enviar a validación"}</button></div>
+      <div className="mt-6 flex gap-3"><button onClick={onClose} className="flex-1 rounded-xl border border-stone-200 py-3 text-sm font-semibold text-stone-600 hover:bg-stone-50">Cancelar</button><button onClick={submit} disabled={busy} className="flex-1 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{busy ? "Subiendo…" : "Enviar a validación"}</button></div>
     </ModalShell>
   );
 }

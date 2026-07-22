@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase, userToEmail } from "./supabase";
 
 export interface Profile { id: string; username: string; name: string; roles: string[]; validated: boolean }
-export interface ValRequest { id: string; user_id: string; name: string; dni: string; cuil: string; nacimiento: string; origen: string; residencia: string; status: string; created_at: string }
+export interface ValRequest { id: string; user_id: string; name: string; dni: string; cuil: string; nacimiento: string; origen: string; residencia: string; status: string; created_at: string; dni_front?: string; dni_back?: string }
 export interface PropRow { id: string; owner_id: string; title: string; type: string; zona: string; address: string; price: number; status: string; created_at: string; image?: string; rating?: number; beds?: number; baths?: number; m2?: number; cochera?: boolean; agent?: string }
 
 async function fetchProfile(id: string): Promise<Profile | null> {
@@ -86,10 +86,26 @@ export function useMyProperties(ownerId: string | undefined): PropRow[] {
 }
 
 /* ---------- ACTIONS ---------- */
-export async function submitValidation(f: { name: string; dni: string; cuil: string; nacimiento: string; origen: string; residencia: string }) {
+export async function submitValidation(f: { name: string; dni: string; cuil: string; nacimiento: string; origen: string; residencia: string; dni_front?: string; dni_back?: string }) {
   const { data } = await supabase.auth.getUser();
   if (!data.user) return;
   await supabase.from("validation_requests").insert({ user_id: data.user.id, ...f, status: "pending" });
+}
+
+// Sube una foto del DNI al bucket privado; devuelve el path guardado.
+export async function uploadKyc(file: File, side: "front" | "back"): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return null;
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${data.user.id}/dni-${side}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("kyc").upload(path, file, { upsert: true });
+  return error ? null : path;
+}
+
+// URL firmada temporal para que el admin vea la imagen del DNI.
+export async function kycSignedUrl(path: string): Promise<string | null> {
+  const { data } = await supabase.storage.from("kyc").createSignedUrl(path, 300);
+  return data?.signedUrl ?? null;
 }
 export async function submitProperty(f: { title: string; type: string; zona: string; address: string; price: number }) {
   const { data } = await supabase.auth.getUser();
