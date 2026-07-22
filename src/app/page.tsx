@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { MOCK_PROPERTIES, Property, PropertyType } from "@/lib/mock-properties";
-import { ACCENT, ROLES, ROLE_DATA, RoleId } from "@/lib/app-data";
+import { ACCENT, ROLES, RoleId } from "@/lib/app-data";
 import {
-  Profile, PropRow, signInUser, signOutUser, signUpUser, submitProperty, submitValidation,
-  updateRoles, useMyProperties, useMyValidation, useProfile,
+  Application, Profile, PropRow, resolveApplication, signInUser, signOutUser, signUpUser,
+  submitApplication, submitProperty, submitValidation, updateRoles,
+  useActiveProperties, useCandidates, useMyApplications, useMyProperties, useMyValidation, useProfile,
 } from "@/lib/store";
 
-type Filter = "todas" | PropertyType;
+type Filter = "todas" | "vivienda" | "comercial" | "industrial";
 type View = { type: "marketplace" } | { type: "global" } | { type: "role"; role: RoleId };
+interface Notif { text: string; dot: string }
 
-const fmt = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
+const fmt = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0);
 
 const I = {
   bed: (p: string) => (<svg className={p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 17v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5M2 17v3M22 17v3M2 13h20M6 10V8a2 2 0 0 1 2-2h3v4" strokeLinecap="round"/></svg>),
@@ -32,8 +33,9 @@ const I = {
 
 const ROLE_IDS = Object.keys(ROLES) as RoleId[];
 const isRole = (r: string): r is RoleId => (ROLE_IDS as string[]).includes(r);
-const STATUS_CHIP: Record<string, string> = { pending: "bg-amber-100 text-amber-700", active: "bg-emerald-100 text-emerald-700", rejected: "bg-rose-100 text-rose-700" };
-const STATUS_LABEL: Record<string, string> = { pending: "En revisión", active: "Publicada", rejected: "Rechazada" };
+const PROP_CHIP: Record<string, string> = { pending: "bg-amber-100 text-amber-700", active: "bg-emerald-100 text-emerald-700", rejected: "bg-rose-100 text-rose-700" };
+const PROP_LABEL: Record<string, string> = { pending: "En revisión", active: "Publicada", rejected: "Rechazada" };
+const APP_CHIP: Record<string, string> = { pending: "bg-amber-100 text-amber-700", accepted: "bg-emerald-100 text-emerald-700", rejected: "bg-rose-100 text-rose-700" };
 
 export default function Home() {
   const { profile } = useProfile();
@@ -41,13 +43,24 @@ export default function Home() {
   const valStatus = profile?.validated ? "validated" : rawVal;
   const roles = (profile?.roles ?? []).filter(isRole);
 
+  const candidates = useCandidates(roles.includes("propietario") ? profile?.id : undefined);
+  const myApps = useMyApplications(roles.includes("inquilino") ? profile?.id : undefined);
+
+  const notifs = useMemo<Notif[]>(() => {
+    const out: Notif[] = [];
+    if (valStatus === "pending") out.push({ text: "Tu validación de DNI está en revisión.", dot: "bg-amber-500" });
+    if (valStatus === "rejected") out.push({ text: "Tu validación de DNI fue rechazada — reintentá.", dot: "bg-rose-500" });
+    if (candidates.length) out.push({ text: `Tenés ${candidates.length} candidato(s) en tus propiedades.`, dot: "bg-sky-500" });
+    myApps.filter((a) => a.status === "accepted").forEach((a) => out.push({ text: `Te aceptaron en "${a.property?.title ?? "una propiedad"}".`, dot: "bg-emerald-500" }));
+    return out;
+  }, [valStatus, candidates.length, myApps]);
+
   const [view, setView] = useState<View>({ type: "marketplace" });
   const [showLogin, setShowLogin] = useState(false);
   const [showDni, setShowDni] = useState(false);
   const [showPublish, setShowPublish] = useState(false);
 
   const tier: "anon" | "account" | "validated" = !profile ? "anon" : valStatus === "validated" ? "validated" : "account";
-
   const activateRole = async (r: RoleId) => { await updateRoles([...roles, r]); setView({ type: "role", role: r }); };
   const startPublish = () => { if (!profile) { setShowLogin(true); return; } if (!roles.includes("propietario")) updateRoles([...roles, "propietario"]); setShowPublish(true); };
   const logout = async () => { await signOutUser(); setView({ type: "marketplace" }); };
@@ -56,7 +69,7 @@ export default function Home() {
     <div className="relative min-h-screen">
       <div className="lux-mesh pointer-events-none fixed inset-0 -z-10" />
       <TopBar
-        profile={profile} roles={roles} view={view} valStatus={valStatus}
+        profile={profile} roles={roles} view={view} valStatus={valStatus} notifs={notifs}
         onLogin={() => setShowLogin(true)} onLogout={logout}
         goHome={() => setView({ type: "marketplace" })} goGlobal={() => setView({ type: "global" })}
         goRole={(r) => setView({ type: "role", role: r })} activateRole={activateRole}
@@ -64,7 +77,7 @@ export default function Home() {
       />
 
       {view.type === "marketplace" && <Marketplace tier={tier} openLogin={() => setShowLogin(true)} />}
-      {view.type === "global" && profile && <GlobalDashboard profile={profile} roles={roles} goRole={(r) => setView({ type: "role", role: r })} />}
+      {view.type === "global" && profile && <GlobalDashboard profile={profile} roles={roles} notifs={notifs} goRole={(r) => setView({ type: "role", role: r })} />}
       {view.type === "role" && profile && <RoleDashboard role={view.role} profile={profile} onPublish={startPublish} />}
       {view.type === "marketplace" && <Footer />}
 
@@ -77,22 +90,18 @@ export default function Home() {
 
 /* ------------------------------ TOP BAR ------------------------------ */
 function TopBar(props: {
-  profile: Profile | null; roles: RoleId[]; view: View; valStatus: string;
+  profile: Profile | null; roles: RoleId[]; view: View; valStatus: string; notifs: Notif[];
   onLogin: () => void; onLogout: () => void; goHome: () => void; goGlobal: () => void;
   goRole: (r: RoleId) => void; activateRole: (r: RoleId) => void; onValidateOpen: () => void; onPublish: () => void;
 }) {
-  const { profile, roles, view, valStatus, onLogin, onLogout, goHome, goGlobal, goRole, activateRole, onValidateOpen, onPublish } = props;
+  const { profile, roles, view, valStatus, notifs, onLogin, onLogout, goHome, goGlobal, goRole, activateRole, onValidateOpen, onPublish } = props;
   const [menu, setMenu] = useState(false);
   const [bell, setBell] = useState(false);
-
   const current = view.type === "role" ? view.role : null;
   const navItems: { label: string; onClick: () => void }[] =
     view.type === "marketplace" ? [{ label: "Alquilar", onClick: goHome }, { label: "Publicar", onClick: onPublish }]
     : view.type === "global" ? [{ label: "Marketplace", onClick: goHome }]
     : [{ label: "Panel global", onClick: goGlobal }, ...(view.role === "propietario" ? [{ label: "Publicar propiedad", onClick: onPublish }] : [])];
-
-  const allNotifs = roles.flatMap((r) => ROLE_DATA[r].notifs.map((n) => ({ ...n, role: r })));
-  const unread = allNotifs.filter((n) => n.unread).length;
   const inactive = ROLE_IDS.filter((r) => !roles.includes(r));
 
   return (
@@ -114,15 +123,15 @@ function TopBar(props: {
           <div className="flex items-center gap-2">
             <div className="relative">
               <button onClick={() => { setBell(!bell); setMenu(false); }} className="relative grid h-10 w-10 place-items-center rounded-full border border-stone-200 bg-white text-stone-600 transition hover:text-stone-900">
-                {I.bell("h-5 w-5")}{unread > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />}
+                {I.bell("h-5 w-5")}{notifs.length > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />}
               </button>
               {bell && (<>
                 <div className="fixed inset-0 z-10" onClick={() => setBell(false)} />
                 <div className="animate-fadeUp absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-2xl border border-stone-200 bg-white soft-lg">
                   <div className="border-b border-stone-100 px-4 py-3 font-display text-sm font-semibold text-stone-900">Notificaciones</div>
                   <div className="max-h-80 overflow-auto">
-                    {allNotifs.length === 0 && <p className="px-4 py-6 text-center text-sm text-stone-400">Sin novedades</p>}
-                    {allNotifs.map((n, i) => (<div key={i} className="flex gap-3 border-b border-stone-50 px-4 py-3 last:border-0"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${ACCENT[n.role].dot}`} /><div><p className="text-sm leading-snug text-stone-700">{n.text}</p><p className="mt-0.5 text-xs text-stone-400">{ROLES[n.role].label} · {n.time}</p></div></div>))}
+                    {notifs.length === 0 && <p className="px-4 py-6 text-center text-sm text-stone-400">Sin novedades por ahora</p>}
+                    {notifs.map((n, i) => (<div key={i} className="flex gap-3 border-b border-stone-50 px-4 py-3 last:border-0"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${n.dot}`} /><p className="text-sm leading-snug text-stone-700">{n.text}</p></div>))}
                   </div>
                 </div>
               </>)}
@@ -147,7 +156,7 @@ function TopBar(props: {
 
                   <div className="border-t border-stone-100 px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-400">Tus roles</div>
                   {roles.length === 0 && <p className="px-4 pb-2 text-sm text-stone-400">Todavía no activaste ninguno.</p>}
-                  {roles.map((r) => (<button key={r} onClick={() => { goRole(r); setMenu(false); }} className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-stone-50 ${view.type === "role" && view.role === r ? "bg-stone-50" : ""}`}><span className={`grid h-8 w-8 place-items-center rounded-lg text-base ${ACCENT[r].soft}`}>{ROLES[r].emoji}</span><span className="flex-1"><span className="block text-sm font-medium text-stone-800">{ROLES[r].label}</span><span className="block text-xs text-stone-400">{ROLES[r].desc}</span></span>{ROLE_DATA[r].notifs.some((n) => n.unread) && <span className={`h-2 w-2 rounded-full ${ACCENT[r].dot}`} />}</button>))}
+                  {roles.map((r) => (<button key={r} onClick={() => { goRole(r); setMenu(false); }} className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-stone-50 ${view.type === "role" && view.role === r ? "bg-stone-50" : ""}`}><span className={`grid h-8 w-8 place-items-center rounded-lg text-base ${ACCENT[r].soft}`}>{ROLES[r].emoji}</span><span className="flex-1"><span className="block text-sm font-medium text-stone-800">{ROLES[r].label}</span><span className="block text-xs text-stone-400">{ROLES[r].desc}</span></span></button>))}
 
                   {inactive.length > 0 && <div className="border-t border-stone-100 px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-400">Activar rol</div>}
                   {inactive.map((r) => (<button key={r} onClick={() => { activateRole(r); setMenu(false); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-stone-50"><span className="grid h-8 w-8 place-items-center rounded-lg bg-stone-100 text-base opacity-70">{ROLES[r].emoji}</span><span className="flex-1"><span className="block text-sm font-medium text-stone-600">{ROLES[r].label}</span>{ROLES[r].requires && <span className="block text-xs text-stone-400">Requiere: {ROLES[r].requires}</span>}</span><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Activar</span></button>))}
@@ -172,9 +181,12 @@ function TopBar(props: {
 const TYPES: { id: Filter; label: string }[] = [{ id: "todas", label: "Todas" }, { id: "vivienda", label: "Vivienda" }, { id: "comercial", label: "Comercial" }, { id: "industrial", label: "Industrial" }];
 
 function Marketplace({ tier, openLogin }: { tier: "anon" | "account" | "validated"; openLogin: () => void }) {
+  const all = useActiveProperties();
   const [filter, setFilter] = useState<Filter>("todas");
-  const list = useMemo(() => MOCK_PROPERTIES.filter((p) => filter === "todas" || p.type === filter), [filter]);
-  const featured = MOCK_PROPERTIES[1];
+  const [q, setQ] = useState("");
+  const list = useMemo(() => all.filter((p) => (filter === "todas" || p.type === filter) && (q.trim() === "" || `${p.zona ?? ""} ${p.address ?? ""} ${p.title}`.toLowerCase().includes(q.trim().toLowerCase()))), [all, filter, q]);
+  const featured = all[0];
+
   return (
     <>
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-14 sm:py-20 lg:grid-cols-[1fr_0.9fr]">
@@ -183,19 +195,22 @@ function Marketplace({ tier, openLogin }: { tier: "anon" | "account" | "validate
           <h1 className="mt-6 font-display text-5xl font-semibold leading-[1.04] tracking-tight text-stone-900 sm:text-[4.1rem]">El alquiler,<br /><span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-amber-600 bg-clip-text text-transparent">elevado a experiencia.</span></h1>
           <p className="mt-6 max-w-md text-lg leading-relaxed text-stone-500">Propietario, inquilino y martillero en un solo circuito. Cada uno gestiona lo suyo; nosotros lo unimos: claro, seguro y más barato.</p>
           <div className="soft mt-8 flex items-center gap-2 rounded-2xl border border-stone-200 bg-white p-2">
-            <div className="flex flex-1 items-center gap-2 px-3 text-stone-400">{I.pin("h-4 w-4 text-emerald-600")}<input placeholder="Buscá por zona en Neuquén…" className="w-full bg-transparent py-2 text-sm text-stone-800 outline-none placeholder:text-stone-400" /></div>
-            <button className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500">{I.search("h-4 w-4")} Buscar</button>
+            <div className="flex flex-1 items-center gap-2 px-3 text-stone-400">{I.pin("h-4 w-4 text-emerald-600")}<input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscá por zona, calle o título…" className="w-full bg-transparent py-2 text-sm text-stone-800 outline-none placeholder:text-stone-400" /></div>
+            {q && <button onClick={() => setQ("")} className="rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-semibold text-stone-500 hover:text-stone-800">Limpiar</button>}
+            <span className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white">{I.search("h-4 w-4")} {list.length}</span>
           </div>
-          <div className="mt-10 flex gap-10">{[["−30%", "comisión"], ["100%", "respaldo martillero"], ["4.8★", "satisfacción"]].map(([n, l]) => (<div key={l}><div className="font-display text-3xl font-semibold text-stone-900">{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
+          <div className="mt-10 flex gap-10">{[["−30%", "comisión"], ["100%", "respaldo martillero"], [String(all.length), "propiedades"]].map(([n, l]) => (<div key={l}><div className="font-display text-3xl font-semibold text-stone-900">{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
         </div>
-        <div className="animate-floaty">
-          <div className="soft-lg overflow-hidden rounded-[2rem] border border-stone-200 bg-white"><div className="relative h-[25rem]">
-            <img src={featured.image} alt={featured.title} className="h-full w-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
-            <span className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white">{I.check("h-3.5 w-3.5")} Verificado</span>
-            <div className="absolute bottom-5 left-5 right-5"><p className="text-xs text-white/80">{featured.zona} · Neuquén</p><h3 className="font-display text-2xl font-semibold text-white">{featured.title}</h3><div className="mt-2 flex items-center justify-between"><span className="font-display text-xl font-semibold text-white">{fmt(featured.priceARS)} <span className="text-sm font-normal text-white/80">/mes</span></span><span className="flex items-center gap-1 text-sm font-semibold text-amber-300">{I.star("h-4 w-4")} {featured.rating}</span></div></div>
-          </div></div>
-        </div>
+        {featured && (
+          <div className="animate-floaty">
+            <div className="soft-lg overflow-hidden rounded-[2rem] border border-stone-200 bg-white"><div className="relative h-[25rem]">
+              <img src={featured.image} alt={featured.title} className="h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
+              <span className="absolute right-4 top-4 flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white">{I.check("h-3.5 w-3.5")} Verificado</span>
+              <div className="absolute bottom-5 left-5 right-5"><p className="text-xs text-white/80">{featured.zona} · Neuquén</p><h3 className="font-display text-2xl font-semibold text-white">{featured.title}</h3><div className="mt-2 flex items-center justify-between"><span className="font-display text-xl font-semibold text-white">{fmt(featured.price)} <span className="text-sm font-normal text-white/80">/mes</span></span><span className="flex items-center gap-1 text-sm font-semibold text-amber-300">{I.star("h-4 w-4")} {featured.rating}</span></div></div>
+            </div></div>
+          </div>
+        )}
       </section>
 
       <div className="mx-auto max-w-6xl px-5">
@@ -212,44 +227,57 @@ function Marketplace({ tier, openLogin }: { tier: "anon" | "account" | "validate
           <div><p className="text-sm font-semibold text-emerald-600">Curaduría</p><h2 className="font-display text-3xl font-semibold text-stone-900">Propiedades en Neuquén</h2></div>
           <div className="flex flex-wrap gap-2">{TYPES.map((t) => (<button key={t.id} onClick={() => setFilter(t.id)} className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${filter === t.id ? "bg-stone-900 text-white" : "border border-stone-200 bg-white text-stone-500 hover:text-stone-900"}`}>{t.label}</button>))}</div>
         </div>
-        <div className="grid grid-cols-1 gap-7 sm:grid-cols-2 lg:grid-cols-3">{list.map((p) => <PropertyCard key={p.id} p={p} tier={tier} />)}</div>
+        {list.length === 0 ? (
+          <div className="soft rounded-3xl border border-stone-200 bg-white p-12 text-center text-stone-500">{all.length === 0 ? "Cargando propiedades…" : "No hay propiedades para ese filtro."}</div>
+        ) : (
+          <div className="grid grid-cols-1 gap-7 sm:grid-cols-2 lg:grid-cols-3">{list.map((p) => <PropertyCard key={p.id} p={p} tier={tier} openLogin={openLogin} />)}</div>
+        )}
       </main>
     </>
   );
 }
 
-function PropertyCard({ p, tier }: { p: Property; tier: "anon" | "account" | "validated" }) {
+function PropertyCard({ p, tier, openLogin }: { p: PropRow; tier: "anon" | "account" | "validated"; openLogin: () => void }) {
+  const [state, setState] = useState<"idle" | "busy" | "done" | "err">("idle");
+  const [msg, setMsg] = useState("");
   const showPrice = tier !== "anon";
   const canContact = tier === "validated";
+  const contact = async () => {
+    if (!canContact) { if (tier === "anon") openLogin(); return; }
+    setState("busy");
+    const r = await submitApplication(p.id);
+    if (r.ok) setState("done"); else { setState("err"); setMsg(r.error ?? "Error"); }
+  };
   return (
     <article className="soft group overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white transition duration-300 hover:-translate-y-1.5">
       <div className="relative h-56 overflow-hidden">
-        <img src={p.image} alt={p.title} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+        {p.image ? <img src={p.image} alt={p.title} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /> : <div className="h-full w-full bg-gradient-to-br from-emerald-200 to-teal-300" />}
         <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold capitalize text-stone-700 backdrop-blur">{p.type}</span>
-        {p.brokerVerified && <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">{I.check("h-3.5 w-3.5")} Martillero</span>}
-        <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-amber-600 backdrop-blur">{I.star("h-3.5 w-3.5")} {p.rating}</span>
+        <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">{I.check("h-3.5 w-3.5")} Martillero</span>
+        {p.rating ? <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-amber-600 backdrop-blur">{I.star("h-3.5 w-3.5")} {p.rating}</span> : null}
       </div>
       <div className="p-5">
         <h3 className="font-display text-lg font-semibold leading-snug text-stone-900">{p.title}</h3>
-        <p className="mt-1 flex items-center gap-1.5 text-sm text-stone-500">{I.pin("h-3.5 w-3.5 shrink-0")}<span>{p.zona}{showPrice ? ` · ${p.address}` : ""}</span></p>
-        <div className="mt-4 flex flex-wrap gap-4 text-xs text-stone-400">{p.type === "vivienda" && <span className="flex items-center gap-1.5">{I.bed("h-4 w-4")} {p.beds || "Mono"}</span>}<span className="flex items-center gap-1.5">{I.bath("h-4 w-4")} {p.baths}</span><span className="flex items-center gap-1.5">{I.ruler("h-4 w-4")} {p.m2} m²</span>{p.cochera && <span className="flex items-center gap-1.5">{I.car("h-4 w-4")} Cochera</span>}</div>
+        <p className="mt-1 flex items-center gap-1.5 text-sm text-stone-500">{I.pin("h-3.5 w-3.5 shrink-0")}<span>{p.zona}{showPrice && p.address ? ` · ${p.address}` : ""}</span></p>
+        <div className="mt-4 flex flex-wrap gap-4 text-xs text-stone-400">{p.type === "vivienda" && <span className="flex items-center gap-1.5">{I.bed("h-4 w-4")} {p.beds || "Mono"}</span>}<span className="flex items-center gap-1.5">{I.bath("h-4 w-4")} {p.baths}</span>{p.m2 ? <span className="flex items-center gap-1.5">{I.ruler("h-4 w-4")} {p.m2} m²</span> : null}{p.cochera && <span className="flex items-center gap-1.5">{I.car("h-4 w-4")} Cochera</span>}</div>
         <div className="mt-5 flex items-end justify-between border-t border-stone-100 pt-4">
-          {showPrice ? (<div><div className="font-display text-xl font-semibold text-emerald-700">{fmt(p.priceARS)}</div><div className="text-xs text-stone-400">{p.agent} · por mes</div></div>) : (<div className="flex items-center gap-2 text-sm font-medium text-stone-400">{I.lock("h-4 w-4")} Ingresá para ver precio</div>)}
-          <button disabled={!canContact} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${canContact ? "bg-emerald-600 text-white hover:bg-emerald-500" : "cursor-not-allowed border border-stone-200 text-stone-400"}`}>{canContact ? "Contactar" : "Validá"}</button>
+          {showPrice ? (<div><div className="font-display text-xl font-semibold text-emerald-700">{fmt(p.price)}</div><div className="text-xs text-stone-400">{p.agent ? `${p.agent} · ` : ""}por mes</div></div>) : (<div className="flex items-center gap-2 text-sm font-medium text-stone-400">{I.lock("h-4 w-4")} Ingresá para ver precio</div>)}
+          {state === "done" ? (<span className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">Contactado ✓</span>)
+          : (<button onClick={contact} disabled={state === "busy"} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${canContact ? "bg-emerald-600 text-white hover:bg-emerald-500" : "border border-stone-200 text-stone-500 hover:text-stone-800"}`}>{state === "busy" ? "…" : canContact ? "Contactar" : tier === "anon" ? "Ingresar" : "Validá"}</button>)}
         </div>
+        {state === "err" && <p className="mt-2 text-right text-xs text-rose-500">{msg}</p>}
       </div>
     </article>
   );
 }
 
 /* ------------------------------ GLOBAL DASHBOARD ------------------------------ */
-function GlobalDashboard({ profile, roles, goRole }: { profile: Profile; roles: RoleId[]; goRole: (r: RoleId) => void }) {
-  const recent = roles.flatMap((r) => ROLE_DATA[r].notifs.map((n) => ({ ...n, role: r }))).slice(0, 6);
+function GlobalDashboard({ profile, roles, notifs, goRole }: { profile: Profile; roles: RoleId[]; notifs: Notif[]; goRole: (r: RoleId) => void }) {
   return (
     <div className="mx-auto max-w-6xl px-5 py-10">
       <p className="text-sm font-semibold text-emerald-600">Panel global</p>
       <h1 className="font-display text-4xl font-semibold text-stone-900">Hola, {profile.name.split(" ")[0]} 👋</h1>
-      <p className="mt-2 text-stone-500">Tenés {roles.length} rol{roles.length === 1 ? "" : "es"} activo{roles.length === 1 ? "" : "s"}. Acá el resumen de cada uno.</p>
+      <p className="mt-2 text-stone-500">Tenés {roles.length} rol{roles.length === 1 ? "" : "es"} activo{roles.length === 1 ? "" : "s"}. Entrá a cada panel para operar.</p>
       {roles.length === 0 ? (
         <div className="soft mt-8 rounded-2xl border border-stone-200 bg-white p-10 text-center"><p className="text-stone-500">Activá un rol desde tu menú (arriba a la derecha) para empezar a operar.</p></div>
       ) : (
@@ -257,11 +285,10 @@ function GlobalDashboard({ profile, roles, goRole }: { profile: Profile; roles: 
           <div className="grid gap-5 sm:grid-cols-2">
             {roles.map((r) => (<button key={r} onClick={() => goRole(r)} className="soft group rounded-3xl border border-stone-200 bg-white p-5 text-left transition hover:-translate-y-1">
               <div className="flex items-center gap-3"><span className={`grid h-11 w-11 place-items-center rounded-xl text-xl ${ACCENT[r].soft}`}>{ROLES[r].emoji}</span><div><p className="font-display text-lg font-semibold text-stone-900">{ROLES[r].label}</p><p className="text-xs text-stone-400">{ROLES[r].desc}</p></div></div>
-              <div className="mt-4 flex gap-4">{ROLE_DATA[r].summary.map(([n, l]) => (<div key={l}><div className={`font-display text-xl font-semibold ${ACCENT[r].text}`}>{n}</div><div className="text-[11px] text-stone-400">{l}</div></div>))}</div>
-              <div className="mt-4 border-t border-stone-100 pt-3"><p className="line-clamp-2 text-sm text-stone-600">{ROLE_DATA[r].notifs[0]?.text}</p><span className={`mt-2 inline-block text-xs font-semibold ${ACCENT[r].text}`}>Entrar al panel →</span></div>
+              <span className={`mt-4 inline-block text-xs font-semibold ${ACCENT[r].text}`}>Entrar al panel →</span>
             </button>))}
           </div>
-          <div className="soft rounded-3xl border border-stone-200 bg-white p-5"><h3 className="font-display text-lg font-semibold text-stone-900">Notificaciones recientes</h3><div className="mt-3 space-y-3">{recent.map((n, i) => (<div key={i} className="flex gap-3"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${ACCENT[n.role].dot}`} /><div><p className="text-sm leading-snug text-stone-700">{n.text}</p><p className="mt-0.5 text-xs text-stone-400">{ROLES[n.role].label} · {n.time}</p></div></div>))}</div></div>
+          <div className="soft rounded-3xl border border-stone-200 bg-white p-5"><h3 className="font-display text-lg font-semibold text-stone-900">Notificaciones</h3><div className="mt-3 space-y-3">{notifs.length === 0 ? <p className="text-sm text-stone-400">Sin novedades por ahora.</p> : notifs.map((n, i) => (<div key={i} className="flex gap-3"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${n.dot}`} /><p className="text-sm leading-snug text-stone-700">{n.text}</p></div>))}</div></div>
         </div>
       )}
     </div>
@@ -271,32 +298,55 @@ function GlobalDashboard({ profile, roles, goRole }: { profile: Profile; roles: 
 /* ------------------------------ ROLE DASHBOARD ------------------------------ */
 function RoleDashboard({ role, profile, onPublish }: { role: RoleId; profile: Profile; onPublish: () => void }) {
   const a = ACCENT[role];
-  const d = ROLE_DATA[role];
-  const mine = useMyProperties(role === "propietario" ? profile.id : undefined);
+  const isProp = role === "propietario";
+  const isInq = role === "inquilino";
+  const mine = useMyProperties(isProp ? profile.id : undefined);
+  const candidates = useCandidates(isProp ? profile.id : undefined);
+  const apps = useMyApplications(isInq ? profile.id : undefined);
+
+  const summary: [string, string][] = isProp
+    ? [[String(mine.length), "propiedades"], [String(mine.filter((p) => p.status === "pending").length), "en revisión"], [String(candidates.length), "candidatos"]]
+    : isInq
+    ? [[String(apps.length), "postulaciones"], [String(apps.filter((x) => x.status === "accepted").length), "aceptadas"], [profile.validated ? "✓" : "—", "DNI validado"]]
+    : [["0", "activos"], ["0", "pendientes"], ["—", "estado"]];
+
   return (
     <div className="mx-auto max-w-6xl px-5 py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4"><span className={`grid h-14 w-14 place-items-center rounded-2xl text-2xl ${a.soft}`}>{ROLES[role].emoji}</span><div><p className={`text-sm font-semibold ${a.text}`}>Panel de {ROLES[role].label.toLowerCase()}</p><h1 className="font-display text-3xl font-semibold text-stone-900">{ROLES[role].label}</h1></div></div>
-        {role === "propietario" && <button onClick={onPublish} className="flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500">{I.plus("h-4 w-4")} Publicar propiedad</button>}
+        {isProp && <button onClick={onPublish} className="flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500">{I.plus("h-4 w-4")} Publicar propiedad</button>}
       </div>
 
-      <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-3">{d.summary.map(([n, l]) => (<div key={l} className="soft rounded-2xl border border-stone-200 bg-white p-4"><div className={`font-display text-2xl font-semibold ${a.text}`}>{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
+      <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-3">{summary.map(([n, l]) => (<div key={l} className="soft rounded-2xl border border-stone-200 bg-white p-4"><div className={`font-display text-2xl font-semibold ${a.text}`}>{n}</div><div className="mt-1 text-xs text-stone-500">{l}</div></div>))}</div>
 
-      {role === "propietario" && (
+      {isProp && (
+        <div className="mt-7 grid gap-6 lg:grid-cols-2">
+          <section className="soft rounded-3xl border border-stone-200 bg-white p-5">
+            <h3 className="mb-3 font-display text-lg font-semibold text-stone-900">Mis propiedades</h3>
+            {mine.length === 0 ? (<div className="rounded-2xl bg-stone-50 p-6 text-center text-sm text-stone-500">Todavía no publicaste ninguna. <button onClick={onPublish} className="font-semibold text-emerald-700">Publicá la primera →</button></div>)
+            : (<div className="space-y-2.5">{mine.map((p) => (<div key={p.id} className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-3"><div><p className="font-medium text-stone-800">{p.title}</p><p className="text-xs text-stone-400">{p.zona} · {fmt(p.price)}/mes</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${PROP_CHIP[p.status]}`}>{PROP_LABEL[p.status]}</span></div>))}</div>)}
+          </section>
+          <section className="soft rounded-3xl border border-stone-200 bg-white p-5">
+            <h3 className="mb-3 font-display text-lg font-semibold text-stone-900">Candidatos</h3>
+            {candidates.length === 0 ? (<div className="rounded-2xl bg-stone-50 p-6 text-center text-sm text-stone-500">Sin candidatos todavía. Aparecen cuando un inquilino se contacta.</div>)
+            : (<div className="space-y-2.5">{candidates.map((c) => (<div key={c.id} className="rounded-xl border border-stone-100 bg-stone-50 px-4 py-3"><div className="flex items-center justify-between"><p className="text-sm font-medium text-stone-800">Interesado en “{c.property?.title}”</p><span className="text-xs text-stone-400">{new Date(c.created_at).toLocaleDateString("es-AR")}</span></div>{c.status === "pending" ? (<div className="mt-2 flex gap-2"><button onClick={() => resolveApplication(c.id, "accepted")} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500">Aceptar</button><button onClick={() => resolveApplication(c.id, "rejected")} className="rounded-lg border border-stone-200 px-3 py-1.5 text-xs font-semibold text-stone-600 hover:border-rose-300 hover:text-rose-600">Rechazar</button></div>) : (<span className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${APP_CHIP[c.status]}`}>{c.status === "accepted" ? "Aceptado" : "Rechazado"}</span>)}</div>))}</div>)}
+          </section>
+        </div>
+      )}
+
+      {isInq && (
         <section className="soft mt-7 rounded-3xl border border-stone-200 bg-white p-5">
-          <h3 className="mb-3 font-display text-lg font-semibold text-stone-900">Mis propiedades</h3>
-          {mine.length === 0 ? (
-            <div className="rounded-2xl bg-stone-50 p-6 text-center text-sm text-stone-500">Todavía no publicaste ninguna. <button onClick={onPublish} className="font-semibold text-emerald-700">Publicá la primera →</button></div>
-          ) : (
-            <div className="space-y-2.5">{mine.map((p) => (<div key={p.id} className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-3"><div><p className="font-medium text-stone-800">{p.title}</p><p className="text-xs text-stone-400">{p.zona} · {fmt(p.price)}/mes</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CHIP[p.status]}`}>{STATUS_LABEL[p.status]}</span></div>))}</div>
-          )}
+          <h3 className="mb-3 font-display text-lg font-semibold text-stone-900">Mis postulaciones</h3>
+          {apps.length === 0 ? (<div className="rounded-2xl bg-stone-50 p-6 text-center text-sm text-stone-500">Todavía no te contactaste con ninguna propiedad. Andá al marketplace y tocá “Contactar”.</div>)
+          : (<div className="space-y-2.5">{apps.map((x) => (<div key={x.id} className="flex items-center justify-between rounded-xl border border-stone-100 bg-stone-50 px-4 py-3"><div><p className="font-medium text-stone-800">{x.property?.title}</p><p className="text-xs text-stone-400">{x.property?.zona} · {fmt(x.property?.price ?? 0)}/mes</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${APP_CHIP[x.status]}`}>{x.status === "pending" ? "Enviada" : x.status === "accepted" ? "Aceptada" : "Rechazada"}</span></div>))}</div>)}
         </section>
       )}
 
-      <div className="mt-7 grid gap-6 lg:grid-cols-2">
-        <section className="soft rounded-3xl border border-stone-200 bg-white p-5"><h3 className="font-display text-lg font-semibold text-stone-900">Notificaciones</h3><div className="mt-3 space-y-3">{d.notifs.map((n, i) => (<div key={i} className="flex gap-3 rounded-xl bg-stone-50 px-3 py-3"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${n.unread ? a.dot : "bg-stone-300"}`} /><div><p className="text-sm leading-snug text-stone-700">{n.text}</p><p className="mt-0.5 text-xs text-stone-400">{n.time}</p></div></div>))}</div></section>
-        <section className="soft rounded-3xl border border-stone-200 bg-white p-5"><h3 className="font-display text-lg font-semibold text-stone-900">Seguimiento de operaciones</h3><div className="mt-3 space-y-4">{d.ops.map((o, i) => (<div key={i}><div className="flex items-center justify-between"><p className="text-sm font-medium text-stone-800">{o.title}</p><span className={`text-xs font-semibold ${a.text}`}>{o.progress}%</span></div><p className="text-xs text-stone-400">{o.stage}</p><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-100"><div className={`h-full rounded-full ${a.bar}`} style={{ width: `${o.progress}%` }} /></div></div>))}</div></section>
-      </div>
+      {!isProp && !isInq && (
+        <div className="soft mt-7 rounded-3xl border border-stone-200 bg-white p-10 text-center">
+          <p className="text-stone-500">Este panel se activa cuando tengas actividad como <b>{ROLES[role].label.toLowerCase()}</b>. Todavía no hay datos reales para mostrar — y no inventamos ninguno.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -370,12 +420,12 @@ function PublishModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
 function Footer() {
   return (
     <footer className="border-t border-stone-200">
-      <div className="mx-auto grid max-w-6xl gap-8 px-5 py-12 sm:grid-cols-4">
-        <div className="sm:col-span-2"><div className="flex items-center gap-2.5"><div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-display font-bold text-white">N</div><span className="font-display text-lg font-semibold text-stone-900">Neo Rent Go</span></div><p className="mt-3 max-w-xs text-sm text-stone-500">El circuito de alquiler completo, productizado. Neuquén, Argentina.</p></div>
-        <div className="text-sm text-stone-500"><p className="mb-3 font-semibold text-stone-800">Plataforma</p><ul className="space-y-2"><li className="cursor-pointer hover:text-stone-900">Alquilar</li><li className="cursor-pointer hover:text-stone-900">Publicar</li><li className="cursor-pointer hover:text-stone-900">Para martilleros</li></ul></div>
-        <div className="text-sm text-stone-500"><p className="mb-3 font-semibold text-stone-800">Sistema</p><ul className="space-y-2"><li><Link href="/administer" className="hover:text-emerald-700">Administer</Link></li><li className="cursor-pointer hover:text-stone-900">Legales</li></ul></div>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-8">
+        <div className="flex items-center gap-2.5"><div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-display font-bold text-white">N</div><span className="font-display text-lg font-semibold text-stone-900">Neo Rent Go</span></div>
+        <p className="text-sm text-stone-500">El circuito de alquiler completo, productizado. Neuquén, Argentina.</p>
+        <Link href="/administer" className="text-sm font-semibold text-stone-500 hover:text-emerald-700">Panel del sistema →</Link>
       </div>
-      <div className="border-t border-stone-200/70 py-5 text-center text-xs text-stone-400">Neo Rent Go · MVP Slice 01 · Supabase conectado</div>
+      <div className="border-t border-stone-200/70 py-5 text-center text-xs text-stone-400">Neo Rent Go · MVP · datos reales sobre Supabase</div>
     </footer>
   );
 }

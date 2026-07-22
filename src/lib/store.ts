@@ -5,7 +5,7 @@ import { supabase, userToEmail } from "./supabase";
 
 export interface Profile { id: string; username: string; name: string; roles: string[]; validated: boolean }
 export interface ValRequest { id: string; user_id: string; name: string; dni: string; cuil: string; nacimiento: string; origen: string; residencia: string; status: string; created_at: string }
-export interface PropRow { id: string; owner_id: string; title: string; type: string; zona: string; address: string; price: number; status: string; created_at: string }
+export interface PropRow { id: string; owner_id: string; title: string; type: string; zona: string; address: string; price: number; status: string; created_at: string; image?: string; rating?: number; beds?: number; baths?: number; m2?: number; cochera?: boolean; agent?: string }
 
 async function fetchProfile(id: string): Promise<Profile | null> {
   const { data } = await supabase.from("profiles").select("*").eq("id", id).single();
@@ -120,4 +120,54 @@ export function usePendingApprovals(enabled: boolean): { vals: ValRequest[]; pro
     return () => { supabase.removeChannel(ch); };
   }, [enabled]);
   return { vals, props };
+}
+
+/* ---------- MARKETPLACE + CANDIDATOS ---------- */
+export interface Application { id: string; property_id: string; tenant_id: string; status: string; created_at: string; property?: { title: string; zona: string; price: number; image?: string; owner_id?: string } }
+
+export function useActiveProperties(): PropRow[] {
+  const [rows, setRows] = useState<PropRow[]>([]);
+  useEffect(() => {
+    const load = async () => { const { data } = await supabase.from("properties").select("*").eq("status", "active").order("created_at", { ascending: false }); setRows((data as PropRow[]) ?? []); };
+    load();
+    const ch = supabase.channel("active").on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  return rows;
+}
+
+export async function submitApplication(propertyId: string): Promise<{ ok?: boolean; error?: string }> {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Iniciá sesión." };
+  const { error } = await supabase.from("applications").insert({ property_id: propertyId, tenant_id: data.user.id });
+  if (error) return { error: error.message.includes("duplicate") ? "Ya te contactaste con esta propiedad." : error.message };
+  return { ok: true };
+}
+
+export function useMyApplications(tenantId: string | undefined): Application[] {
+  const [rows, setRows] = useState<Application[]>([]);
+  useEffect(() => {
+    if (!tenantId) { setRows([]); return; }
+    const load = async () => { const { data } = await supabase.from("applications").select("*, property:properties(title,zona,price,image)").eq("tenant_id", tenantId).order("created_at", { ascending: false }); setRows((data as Application[]) ?? []); };
+    load();
+    const ch = supabase.channel("myapps").on("postgres_changes", { event: "*", schema: "public", table: "applications" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [tenantId]);
+  return rows;
+}
+
+export function useCandidates(ownerId: string | undefined): Application[] {
+  const [rows, setRows] = useState<Application[]>([]);
+  useEffect(() => {
+    if (!ownerId) { setRows([]); return; }
+    const load = async () => { const { data } = await supabase.from("applications").select("*, property:properties!inner(title,zona,price,owner_id)").eq("property.owner_id", ownerId).order("created_at", { ascending: false }); setRows((data as Application[]) ?? []); };
+    load();
+    const ch = supabase.channel("cands").on("postgres_changes", { event: "*", schema: "public", table: "applications" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [ownerId]);
+  return rows;
+}
+
+export async function resolveApplication(id: string, status: "accepted" | "rejected") {
+  await supabase.from("applications").update({ status }).eq("id", id);
 }
