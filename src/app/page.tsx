@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ACCENT, ROLES, RoleId } from "@/lib/app-data";
 import {
   Application, Profile, PropRow, resolveApplication, signInWithGoogle, signOutUser,
@@ -259,33 +259,70 @@ function HeroCarousel({ items, tier }: { items: PropRow[]; tier: "anon" | "accou
 function PropertyCard({ p, tier, openProperty }: { p: PropRow; tier: "anon" | "account" | "validated"; openProperty: (id: string) => void }) {
   const [state, setState] = useState<"idle" | "busy" | "done" | "err">("idle");
   const [msg, setMsg] = useState("");
+  const [hover, setHover] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showPrice = tier !== "anon";
   const canContact = tier === "validated";
+  const enter = () => { timer.current = setTimeout(() => setHover(true), 450); };
+  const leave = () => { if (timer.current) clearTimeout(timer.current); setHover(false); };
   const contact = async () => {
-    if (!canContact) { if (tier === "anon") login(); return; }
+    if (!canContact) { openProperty(p.id); return; }
     setState("busy");
     const r = await submitApplication(p.id);
     if (r.ok) setState("done"); else { setState("err"); setMsg(r.error ?? "Error"); }
   };
+  const specs = (
+    <div className="mt-4 flex flex-wrap gap-4 text-xs text-stone-400">{p.type === "vivienda" && <span className="flex items-center gap-1.5">{I.bed("h-4 w-4")} {p.beds || "Mono"}</span>}<span className="flex items-center gap-1.5">{I.bath("h-4 w-4")} {p.baths}</span>{p.m2 ? <span className="flex items-center gap-1.5">{I.ruler("h-4 w-4")} {p.m2} m²</span> : null}{p.cochera && <span className="flex items-center gap-1.5">{I.car("h-4 w-4")} Cochera</span>}</div>
+  );
+
   return (
-    <article className="soft group overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white transition duration-300 hover:-translate-y-1.5">
-      <div className="relative h-56 overflow-hidden">
-        <MediaCarousel media={p.media} image={p.image} className="h-full" />
-        <span className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold capitalize text-stone-700 backdrop-blur">{p.type}</span>
-      </div>
-      <div className="p-5">
-        <h3 className="font-display text-lg font-semibold leading-snug text-stone-900">{p.title}</h3>
-        <p className="mt-1 flex items-center gap-1.5 text-sm text-stone-500">{I.pin("h-3.5 w-3.5 shrink-0")}<span>{p.zona}{showPrice && p.address ? ` · ${p.address}` : ""}</span></p>
-        <div className="mt-4 flex flex-wrap gap-4 text-xs text-stone-400">{p.type === "vivienda" && <span className="flex items-center gap-1.5">{I.bed("h-4 w-4")} {p.beds || "Mono"}</span>}<span className="flex items-center gap-1.5">{I.bath("h-4 w-4")} {p.baths}</span>{p.m2 ? <span className="flex items-center gap-1.5">{I.ruler("h-4 w-4")} {p.m2} m²</span> : null}{p.cochera && <span className="flex items-center gap-1.5">{I.car("h-4 w-4")} Cochera</span>}</div>
-        <div className="grid grid-rows-[0fr] transition-all duration-300 group-hover:grid-rows-[1fr]"><div className="overflow-hidden"><button onClick={() => openProperty(p.id)} className="mt-3 w-full rounded-xl border border-stone-200 py-2 text-sm font-semibold text-stone-700 transition hover:border-emerald-300 hover:text-emerald-700">Ver publicación completa →</button></div></div>
-        <div className="mt-4 flex items-end justify-between border-t border-stone-100 pt-4">
-          {showPrice ? (<div><div className="font-display text-xl font-semibold text-emerald-700">{fmt(p.price)}</div><div className="text-xs text-stone-400">por mes</div></div>) : (<div className="flex items-center gap-2 text-sm font-medium text-stone-400">{I.lock("h-4 w-4")} Ingresá para ver precio</div>)}
-          {state === "done" ? (<span className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">Contactado ✓</span>)
-          : (<button onClick={contact} disabled={state === "busy"} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${canContact ? "bg-emerald-600 text-white hover:bg-emerald-500" : "border border-stone-200 text-stone-500 hover:text-stone-800"}`}>{state === "busy" ? "…" : canContact ? "Contactar" : tier === "anon" ? "Ingresar" : "Validá tu cuenta"}</button>)}
+    <div className={`relative ${hover ? "z-30" : ""}`} onMouseEnter={enter} onMouseLeave={leave}>
+      {/* base */}
+      <article className={`soft overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white transition ${hover ? "opacity-0" : "opacity-100"}`}>
+        <div className="relative h-56 overflow-hidden">
+          {p.media?.[0]?.url || p.image ? <img src={p.media?.[0]?.url ?? p.image} alt={p.title} loading="lazy" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-gradient-to-br from-emerald-200 to-teal-300" />}
+          <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold capitalize text-stone-700 backdrop-blur">{p.type}</span>
         </div>
-        {state === "err" && <p className="mt-2 text-right text-xs text-rose-500">{msg}</p>}
-      </div>
-    </article>
+        <div className="p-5">
+          <h3 className="font-display text-lg font-semibold leading-snug text-stone-900">{p.title}</h3>
+          <p className="mt-1 flex items-center gap-1.5 text-sm text-stone-500">{I.pin("h-3.5 w-3.5 shrink-0")}<span>{p.zona}</span></p>
+          {specs}
+          <div className="mt-5 border-t border-stone-100 pt-4">{showPrice ? <div className="font-display text-xl font-semibold text-emerald-700">{fmt(p.price)} <span className="text-sm font-normal text-stone-400">/mes</span></div> : <div className="flex items-center gap-2 text-sm font-medium text-stone-400">{I.lock("h-4 w-4")} Ingresá para ver precio</div>}</div>
+        </div>
+      </article>
+
+      {/* overlay semi-completo, superpuesto */}
+      {hover && (
+        <div className="animate-fadeUp absolute left-1/2 top-0 w-[118%] -translate-x-1/2 -translate-y-4">
+          <article className="soft-lg group overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white">
+            <div className="relative h-64 overflow-hidden">
+              <MediaCarousel media={p.media} image={p.image} className="h-full" />
+              <span className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold capitalize text-stone-700 backdrop-blur">{p.type}</span>
+            </div>
+            <div className="p-5">
+              <h3 className="font-display text-xl font-semibold leading-snug text-stone-900">{p.title}</h3>
+              <p className="mt-1 flex items-center gap-1.5 text-sm text-stone-500">{I.pin("h-3.5 w-3.5 shrink-0")}<span>{p.zona}{showPrice && p.address ? ` · ${p.address}` : ""}</span></p>
+              {specs}
+              {showPrice ? (
+                <>
+                  <div className="mt-4 flex items-end justify-between border-t border-stone-100 pt-4">
+                    <div><div className="font-display text-2xl font-semibold text-emerald-700">{fmt(p.price)}</div><div className="text-xs text-stone-400">por mes</div></div>
+                    {state === "done" ? <span className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">Contactado ✓</span> : <button onClick={contact} disabled={state === "busy"} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${canContact ? "bg-emerald-600 text-white hover:bg-emerald-500" : "border border-stone-200 text-stone-600 hover:text-stone-900"}`}>{state === "busy" ? "…" : canContact ? "Contactar" : "Validá tu cuenta"}</button>}
+                  </div>
+                  <button onClick={() => openProperty(p.id)} className="mt-3 w-full rounded-xl bg-stone-900 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700">Ver publicación completa →</button>
+                  {state === "err" && <p className="mt-2 text-right text-xs text-rose-500">{msg}</p>}
+                </>
+              ) : (
+                <div className="mt-4 border-t border-stone-100 pt-4">
+                  <p className="text-sm text-stone-500">Iniciá sesión para ver el precio y abrir la publicación completa.</p>
+                  <button onClick={login} className="mt-3 w-full rounded-xl bg-stone-900 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700">Iniciar sesión con Google</button>
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+      )}
+    </div>
   );
 }
 
