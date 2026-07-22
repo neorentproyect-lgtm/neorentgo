@@ -5,7 +5,8 @@ import { supabase, userToEmail } from "./supabase";
 
 export interface Profile { id: string; username: string; name: string; roles: string[]; validated: boolean }
 export interface ValRequest { id: string; user_id: string; name: string; dni: string; cuil: string; nacimiento: string; origen: string; residencia: string; status: string; created_at: string; dni_front?: string; dni_back?: string }
-export interface PropRow { id: string; owner_id: string; title: string; type: string; zona: string; address: string; price: number; status: string; created_at: string; image?: string; rating?: number; beds?: number; baths?: number; m2?: number; cochera?: boolean; agent?: string }
+export interface PropMedia { url: string; kind: string; position: number }
+export interface PropRow { id: string; owner_id: string; title: string; type: string; zona: string; address: string; price: number; status: string; created_at: string; image?: string; rating?: number; beds?: number; baths?: number; m2?: number; cochera?: boolean; agent?: string; media?: PropMedia[] }
 
 async function fetchProfile(id: string): Promise<Profile | null> {
   const { data } = await supabase.from("profiles").select("*").eq("id", id).single();
@@ -145,15 +146,28 @@ export function usePendingApprovals(enabled: boolean): { vals: ValRequest[]; pro
 /* ---------- MARKETPLACE + CANDIDATOS ---------- */
 export interface Application { id: string; property_id: string; tenant_id: string; status: string; created_at: string; property?: { title: string; zona: string; price: number; image?: string; owner_id?: string } }
 
+const sortMedia = (p: PropRow): PropRow => ({ ...p, media: (p.media ?? []).slice().sort((a, b) => a.position - b.position) });
+
 export function useActiveProperties(): PropRow[] {
   const [rows, setRows] = useState<PropRow[]>([]);
   useEffect(() => {
-    const load = async () => { const { data } = await supabase.from("properties").select("*").eq("status", "active").order("created_at", { ascending: false }); setRows((data as PropRow[]) ?? []); };
+    const load = async () => {
+      const { data } = await supabase.from("properties").select("*, media:property_media(url,kind,position)").eq("status", "active").order("created_at", { ascending: false });
+      setRows(((data as PropRow[]) ?? []).map(sortMedia));
+    };
     load();
-    const ch = supabase.channel("active").on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load()).subscribe();
+    const ch = supabase.channel("active")
+      .on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "property_media" }, () => load())
+      .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
   return rows;
+}
+
+export async function getProperty(id: string): Promise<PropRow | null> {
+  const { data } = await supabase.from("properties").select("*, media:property_media(url,kind,position)").eq("id", id).maybeSingle();
+  return data ? sortMedia(data as PropRow) : null;
 }
 
 export async function submitApplication(propertyId: string): Promise<{ ok?: boolean; error?: string }> {
