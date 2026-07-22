@@ -30,8 +30,13 @@ export async function signUpUser(username: string, password: string): Promise<{ 
 }
 export async function signOutUser() { await supabase.auth.signOut(); }
 
-export async function signInWithGoogle() {
-  await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: typeof window !== "undefined" ? window.location.origin : undefined } });
+export async function signInWithGoogle(next?: string) {
+  await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: (typeof window !== "undefined" ? window.location.origin : "") + (next ?? "") } });
+}
+
+export async function amIAdmin(): Promise<boolean> {
+  const { data } = await supabase.rpc("is_admin");
+  return data === true;
 }
 
 export async function updateRoles(roles: string[]) {

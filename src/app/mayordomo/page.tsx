@@ -1,45 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { PropRow, ValRequest, kycSignedUrl, resolveProperty, resolveValidation, signInUser, signOutUser, useAdminStats, usePendingApprovals, useRecentEvents } from "@/lib/store";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { PropRow, ValRequest, amIAdmin, kycSignedUrl, resolveProperty, resolveValidation, signInWithGoogle, signOutUser, useAdminStats, usePendingApprovals, useProfile, useRecentEvents } from "@/lib/store";
 
 type Kind = "dni" | "propiedad";
 const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
 const nowClock = () => new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const fmt = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n || 0);
+const gIcon = (<svg className="h-4 w-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1Z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38Z"/></svg>);
 
-export default function Administer() {
-  const [authed, setAuthed] = useState(false);
-  return authed ? <Dashboard /> : <Gate onOk={() => setAuthed(true)} />;
-}
-
-function Gate({ onOk }: { onOk: () => void }) {
-  const [u, setU] = useState(""); const [pw, setPw] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
-  const submit = async () => {
-    setBusy(true); setErr("");
-    const { profile, error } = await signInUser(u, pw);
-    setBusy(false);
-    if (error || !profile) { setErr("Credenciales inválidas."); return; }
-    if (!profile.roles.includes("admin")) { setErr("Esta cuenta no es de administración."); await signOutUser(); return; }
-    onOk();
-  };
+function GateShell({ children }: { children: ReactNode }) {
   return (
     <div className="lux-mesh grid min-h-screen place-items-center p-4">
-      <div className="soft-lg w-full max-w-sm rounded-3xl border border-stone-200 bg-white p-8">
-        <div className="flex items-center gap-2.5"><div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 font-black text-white">◆</div><span className="font-display text-lg font-semibold text-stone-900">Neo Rent Go · <span className="text-amber-600">Administer</span></span></div>
-        <h1 className="mt-5 font-display text-2xl font-semibold text-stone-900">Panel de sistema</h1>
-        <p className="mt-1 text-sm text-stone-500">Acceso restringido · aprobaciones y registro.</p>
-        <div className="mt-6 space-y-3">
-          <input value={u} onChange={(e) => { setU(e.target.value); setErr(""); }} placeholder="usuario" className="w-full rounded-xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-900 outline-none placeholder:text-stone-400 focus:border-amber-400 focus:bg-white" />
-          <input type="password" value={pw} onChange={(e) => { setPw(e.target.value); setErr(""); }} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="contraseña" className="w-full rounded-xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-900 outline-none placeholder:text-stone-400 focus:border-amber-400 focus:bg-white" />
-          {err && <p className="text-xs text-rose-500">{err}</p>}
-        </div>
-        <button onClick={submit} disabled={busy} className="mt-6 w-full rounded-xl bg-stone-900 py-3 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:opacity-60">{busy ? "…" : "Entrar al panel"}</button>
-        <Link href="/" className="mt-4 block text-center text-sm text-stone-500 hover:text-stone-800">← Volver al sitio</Link>
+      <div className="soft-lg w-full max-w-sm rounded-3xl border border-stone-200 bg-white p-8 text-center">
+        <div className="flex items-center justify-center gap-2.5"><div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 font-black text-white">◆</div><span className="font-display text-lg font-semibold text-stone-900">Neo Rent Go · <span className="text-amber-600">Mayordomo</span></span></div>
+        {children}
+        <Link href="/" className="mt-6 block text-sm text-stone-500 hover:text-stone-800">← Volver al sitio</Link>
       </div>
     </div>
   );
+}
+
+export default function Mayordomo() {
+  const { profile, loading } = useProfile();
+  const [admin, setAdmin] = useState<boolean | null>(null);
+  useEffect(() => { if (!profile) { setAdmin(null); return; } amIAdmin().then(setAdmin); }, [profile?.id]);
+
+  if (loading) return <GateShell><p className="mt-6 text-sm text-stone-500">Cargando…</p></GateShell>;
+  if (!profile) return (
+    <GateShell>
+      <h1 className="mt-5 font-display text-2xl font-semibold text-stone-900">Panel de sistema</h1>
+      <p className="mt-1 text-sm text-stone-500">Acceso restringido. Ingresá con una cuenta autorizada.</p>
+      <button onClick={() => signInWithGoogle("/mayordomo")} className="mt-6 flex w-full items-center justify-center gap-2.5 rounded-xl border border-stone-200 bg-white py-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-50">{gIcon} Ingresar con Google</button>
+    </GateShell>
+  );
+  if (admin === null) return <GateShell><p className="mt-6 text-sm text-stone-500">Verificando acceso…</p></GateShell>;
+  if (!admin) return (
+    <GateShell>
+      <h1 className="mt-5 font-display text-2xl font-semibold text-stone-900">Acceso no autorizado</h1>
+      <p className="mt-1 text-sm text-stone-500">La cuenta <b>{profile.name}</b> no está en la lista de administradores.</p>
+      <button onClick={() => signOutUser()} className="mt-6 w-full rounded-xl bg-stone-900 py-3 text-sm font-semibold text-white transition hover:bg-stone-800">Cerrar sesión</button>
+    </GateShell>
+  );
+  return <Dashboard />;
 }
 
 function Dashboard() {
@@ -51,10 +55,9 @@ function Dashboard() {
   const idRef = useRef(0);
 
   useEffect(() => { const c = setInterval(() => setClock(nowClock()), 1000); return () => clearInterval(c); }, []);
-
   const log = (action: string) => setRegistry((p) => [{ id: `r${idRef.current++}`, action, time: nowClock() }, ...p].slice(0, 20));
-
   const openDoc = async (path?: string) => { if (!path) return; const url = await kycSignedUrl(path); if (url) window.open(url, "_blank"); };
+
   interface Row { key: string; kind: Kind; title: string; subtitle: string; front?: string; back?: string; resolve: (ok: boolean) => void }
   const rows: Row[] = [
     ...vals.map((r: ValRequest): Row => ({ key: r.id, kind: "dni", title: `${r.name} · DNI ${r.dni ?? ""}`, subtitle: `CUIL ${r.cuil ?? "—"} · valida identidad`, front: r.dni_front, back: r.dni_back, resolve: (ok) => { resolveValidation(r, ok); log(`${ok ? "Aprobó" : "Rechazó"} DNI de ${r.name}`); } })),
@@ -71,8 +74,8 @@ function Dashboard() {
       <div className="lux-mesh pointer-events-none fixed inset-0 -z-10" />
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-[#f7f6f2]/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-          <div className="flex items-center gap-2.5"><div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 font-black text-white">◆</div><span className="font-display text-lg font-semibold text-stone-900">Administer</span><span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> en vivo</span></div>
-          <div className="flex items-center gap-4"><span className="font-display text-sm tabular-nums text-stone-500">{clock}</span><Link href="/" onClick={() => signOutUser()} className="text-sm text-stone-500 hover:text-stone-900">Salir</Link></div>
+          <div className="flex items-center gap-2.5"><div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 font-black text-white">◆</div><span className="font-display text-lg font-semibold text-stone-900">Mayordomo</span><span className="ml-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> en vivo</span></div>
+          <div className="flex items-center gap-4"><span className="font-display text-sm tabular-nums text-stone-500">{clock}</span><button onClick={() => signOutUser()} className="text-sm text-stone-500 hover:text-stone-900">Salir</button></div>
         </div>
       </header>
 
@@ -95,8 +98,8 @@ function Dashboard() {
 
             <h2 className="mb-4 mt-8 font-display text-xl font-semibold text-stone-900">Registro de esta sesión</h2>
             <div className="soft overflow-hidden rounded-2xl border border-stone-200 bg-white">
-              {registry.length === 0 ? (<p className="p-5 text-sm text-stone-500">Sin acciones todavía. Aprobá o rechazá algo para verlo acá.</p>) : (
-                <table className="w-full text-sm"><tbody>{registry.map((r) => (<tr key={r.id} className="border-b border-stone-100 last:border-0"><td className="px-4 py-2.5 font-display text-xs tabular-nums text-stone-400">{r.time}</td><td className="px-4 py-2.5 font-medium text-emerald-700">@administer</td><td className="px-4 py-2.5 text-stone-600">{r.action}</td></tr>))}</tbody></table>
+              {registry.length === 0 ? (<p className="p-5 text-sm text-stone-500">Sin acciones todavía.</p>) : (
+                <table className="w-full text-sm"><tbody>{registry.map((r) => (<tr key={r.id} className="border-b border-stone-100 last:border-0"><td className="px-4 py-2.5 font-display text-xs tabular-nums text-stone-400">{r.time}</td><td className="px-4 py-2.5 text-stone-600">{r.action}</td></tr>))}</tbody></table>
               )}
             </div>
           </section>

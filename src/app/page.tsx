@@ -293,32 +293,29 @@ function PropertyCard({ p, tier, openProperty }: { p: PropRow; tier: "anon" | "a
       {/* overlay semi-completo, superpuesto */}
       {hover && (
         <div className="absolute left-1/2 top-0 w-[112%] -translate-x-1/2 -translate-y-4">
-          <article className="soft-lg group overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white">
+          <div
+            onClick={() => { window.location.href = `/property?id=${p.id}`; }}
+            onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); window.open(`/property?id=${p.id}`, "_blank"); } }}
+            onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
+            className="group cursor-pointer overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white soft-lg"
+          >
             <div className="relative h-64 overflow-hidden">
               <MediaCarousel media={p.media} image={p.image} className="h-full" />
               <span className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold capitalize text-stone-700 backdrop-blur">{p.type}</span>
+              <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setHover(false); }} aria-label="Cerrar" className="absolute right-3 top-3 z-20 grid h-8 w-8 place-items-center rounded-full bg-black/40 text-sm text-white backdrop-blur transition hover:bg-black/60">✕</button>
             </div>
             <div className="p-5">
               <h3 className="font-display text-xl font-semibold leading-snug text-stone-900">{p.title}</h3>
               <p className="mt-1 flex items-center gap-1.5 text-sm text-stone-500">{I.pin("h-3.5 w-3.5 shrink-0")}<span>{p.zona}{showPrice && p.address ? ` · ${p.address}` : ""}</span></p>
               {specs}
-              {showPrice ? (
-                <>
-                  <div className="mt-4 flex items-end justify-between border-t border-stone-100 pt-4">
-                    <div><div className="font-display text-2xl font-semibold text-emerald-700">{fmt(p.price)}</div><div className="text-xs text-stone-400">por mes</div></div>
-                    {state === "done" ? <span className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">Contactado ✓</span> : <button onClick={contact} disabled={state === "busy"} className={`rounded-full px-4 py-2 text-sm font-semibold transition ${canContact ? "bg-emerald-600 text-white hover:bg-emerald-500" : "border border-stone-200 text-stone-600 hover:text-stone-900"}`}>{state === "busy" ? "…" : canContact ? "Contactar" : "Validá tu cuenta"}</button>}
-                  </div>
-                  <button onClick={() => openProperty(p.id)} className="mt-3 w-full rounded-xl bg-stone-900 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700">Ver publicación completa →</button>
-                  {state === "err" && <p className="mt-2 text-right text-xs text-rose-500">{msg}</p>}
-                </>
-              ) : (
-                <div className="mt-4 border-t border-stone-100 pt-4">
-                  <p className="text-sm text-stone-500">Iniciá sesión para ver el precio y abrir la publicación completa.</p>
-                  <button onClick={login} className="mt-3 w-full rounded-xl bg-stone-900 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-700">Iniciar sesión con Google</button>
-                </div>
-              )}
+              <div className="mt-4 flex items-center justify-between border-t border-stone-100 pt-4">
+                {showPrice ? <div><div className="font-display text-2xl font-semibold text-emerald-700">{fmt(p.price)}</div><div className="text-xs text-stone-400">por mes</div></div> : <span className="flex items-center gap-2 text-sm font-medium text-stone-400">{I.lock("h-4 w-4")} Iniciá sesión para ver el precio</span>}
+                {canContact && (state === "done" ? <span className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">Contactado ✓</span> : <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); contact(); }} disabled={state === "busy"} className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500">{state === "busy" ? "…" : "Contactar"}</button>)}
+              </div>
+              {canContact && state === "err" && <p className="mt-2 text-right text-xs text-rose-500">{msg}</p>}
+              <p className="mt-3 text-center text-xs text-stone-400">Clic para abrir · clic con la ruedita para nueva pestaña</p>
             </div>
-          </article>
+          </div>
         </div>
       )}
     </div>
@@ -525,7 +522,6 @@ function Footer() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-8">
         <div className="flex items-center gap-2.5"><div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-display font-bold text-white">N</div><span className="font-display text-lg font-semibold text-stone-900">Neo Rent Go</span></div>
         <p className="text-sm text-stone-500">El circuito de alquiler completo, productizado. Neuquén, Argentina.</p>
-        <Link href="/administer" className="text-sm font-semibold text-stone-500 hover:text-emerald-700">Panel del sistema →</Link>
       </div>
       <div className="border-t border-stone-200/70 py-5 text-center text-xs text-stone-400">Neo Rent Go · MVP · datos reales sobre Supabase</div>
     </footer>
