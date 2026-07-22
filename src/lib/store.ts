@@ -108,10 +108,23 @@ export async function kycSignedUrl(path: string): Promise<string | null> {
   const { data } = await supabase.storage.from("kyc").createSignedUrl(path, 300);
   return data?.signedUrl ?? null;
 }
-export async function submitProperty(f: { title: string; type: string; zona: string; address: string; price: number }) {
+export async function submitProperty(f: { title: string; type: string; zona: string; address: string; price: number }, images: string[] = []) {
   const { data } = await supabase.auth.getUser();
   if (!data.user) return;
-  await supabase.from("properties").insert({ owner_id: data.user.id, ...f, status: "pending" });
+  const { data: ins } = await supabase.from("properties").insert({ owner_id: data.user.id, ...f, image: images[0] ?? null, status: "pending" }).select("id").single();
+  if (ins && images.length) {
+    await supabase.from("property_media").insert(images.map((url, i) => ({ property_id: (ins as { id: string }).id, url, kind: "image", position: i })));
+  }
+}
+
+export async function uploadPropertyImage(file: File): Promise<string | null> {
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return null;
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${data.user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+  const { error } = await supabase.storage.from("property-images").upload(path, file, { upsert: true });
+  if (error) return null;
+  return supabase.storage.from("property-images").getPublicUrl(path).data.publicUrl;
 }
 export async function resolveValidation(r: ValRequest, ok: boolean) {
   await supabase.from("validation_requests").update({ status: ok ? "validated" : "rejected" }).eq("id", r.id);

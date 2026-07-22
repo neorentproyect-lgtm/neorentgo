@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ACCENT, ROLES, RoleId } from "@/lib/app-data";
 import {
   Application, Profile, PropRow, resolveApplication, signInWithGoogle, signOutUser,
-  submitApplication, submitProperty, submitValidation, updateRoles, uploadKyc,
+  submitApplication, submitProperty, submitValidation, updateRoles, uploadKyc, uploadPropertyImage,
   useActiveProperties, useCandidates, useMyApplications, useMyProperties, useMyValidation, useProfile,
 } from "@/lib/store";
 import { MediaCarousel } from "@/components/MediaCarousel";
@@ -486,12 +486,16 @@ function DniModal({ onClose }: { onClose: () => void }) {
 
 function PublishModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ title: "", type: "vivienda", zona: "", address: "", price: "" });
+  const [files, setFiles] = useState<File[]>([]);
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const up = (k: keyof typeof f) => (v: string) => { setF({ ...f, [k]: v }); setErr(""); };
   const submit = async () => {
     if (!f.title || !f.zona || !f.address || !f.price) { setErr("Completá todos los campos."); return; }
-    setBusy(true);
-    await submitProperty({ title: f.title, type: f.type, zona: f.zona, address: f.address, price: Number(f.price) || 0 });
+    if (files.length === 0) { setErr("Subí al menos una foto de la propiedad."); return; }
+    setBusy(true); setErr("");
+    const urls = (await Promise.all(files.slice(0, 6).map(uploadPropertyImage))).filter((u): u is string => !!u);
+    if (urls.length === 0) { setBusy(false); setErr("No se pudieron subir las fotos. Reintentá."); return; }
+    await submitProperty({ title: f.title, type: f.type, zona: f.zona, address: f.address, price: Number(f.price) || 0 }, urls);
     onDone(); onClose();
   };
   return (
@@ -501,9 +505,16 @@ function PublishModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
         <div><label className="mb-1 block text-xs font-medium text-stone-500">Tipo</label><select value={f.type} onChange={(e) => up("type")(e.target.value)} className="w-full rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-sm text-stone-900 outline-none focus:border-emerald-400 focus:bg-white"><option value="vivienda">Vivienda</option><option value="comercial">Comercial</option><option value="industrial">Industrial</option></select></div>
         <div className="grid grid-cols-2 gap-3"><Field label="Zona" value={f.zona} onChange={up("zona")} placeholder="Área Centro Este" /><Field label="Dirección" value={f.address} onChange={up("address")} placeholder="Alderete 1240" /></div>
         <Field label="Precio mensual (ARS)" value={f.price} onChange={up("price")} placeholder="385000" type="number" />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-stone-500">Fotos (hasta 6)</label>
+          <label className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-3 py-5 text-center text-sm font-medium transition ${files.length ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-stone-300 text-stone-500 hover:border-stone-400"}`}>
+            <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { setFiles(Array.from(e.target.files ?? [])); setErr(""); }} />
+            <span>{files.length ? `✓ ${files.length} foto(s) seleccionada(s)` : "📷 Subir fotos"}</span>
+          </label>
+        </div>
       </div>
       {err && <p className="mt-3 text-xs text-rose-500">{err}</p>}
-      <div className="mt-6 flex gap-3"><button onClick={onClose} className="flex-1 rounded-xl border border-stone-200 py-3 text-sm font-semibold text-stone-600 hover:bg-stone-50">Cancelar</button><button onClick={submit} disabled={busy} className="flex-1 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{busy ? "Enviando…" : "Enviar a publicación"}</button></div>
+      <div className="mt-6 flex gap-3"><button onClick={onClose} className="flex-1 rounded-xl border border-stone-200 py-3 text-sm font-semibold text-stone-600 hover:bg-stone-50">Cancelar</button><button onClick={submit} disabled={busy} className="flex-1 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{busy ? "Subiendo…" : "Enviar a publicación"}</button></div>
     </ModalShell>
   );
 }
