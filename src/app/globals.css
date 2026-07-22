@@ -1,26 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f6f2;
+  --foreground: #201d18;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-jakarta);
+  --font-display: var(--font-sora);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
 }
+
+/* Airy pastel wash — luz, nada de encierro */
+.lux-mesh {
+  background:
+    radial-gradient(48rem 34rem at 6% -12%, rgba(16, 185, 129, 0.10), transparent 60%),
+    radial-gradient(42rem 32rem at 100% -10%, rgba(251, 191, 36, 0.10), transparent 55%),
+    radial-gradient(40rem 30rem at 92% 106%, rgba(56, 189, 248, 0.09), transparent 60%),
+    radial-gradient(38rem 30rem at 0% 108%, rgba(167, 139, 250, 0.07), transparent 60%);
+}
+
+@keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.animate-floaty { animation: floaty 6s ease-in-out infinite; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fadeUp { animation: fadeUp 0.25s ease-out both; }
+
+.soft { box-shadow: 0 10px 40px -12px rgba(31, 26, 20, 0.12); }
+.soft-lg { box-shadow: 0 24px 60px -18px rgba(31, 26, 20, 0.18); }
+
+::selection { background: rgba(16, 185, 129, 0.18); }
+* { scrollbar-width: thin; scrollbar-color: #d8d4cc transparent; }
