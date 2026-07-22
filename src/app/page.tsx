@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ACCENT, ROLES, RoleId } from "@/lib/app-data";
 import {
   Application, Profile, PropRow, resolveApplication, signInWithGoogle, signOutUser,
@@ -260,11 +260,10 @@ function PropertyCard({ p, tier, openProperty }: { p: PropRow; tier: "anon" | "a
   const [state, setState] = useState<"idle" | "busy" | "done" | "err">("idle");
   const [msg, setMsg] = useState("");
   const [hover, setHover] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showPrice = tier !== "anon";
   const canContact = tier === "validated";
-  const enter = () => { timer.current = setTimeout(() => setHover(true), 450); };
-  const leave = () => { if (timer.current) clearTimeout(timer.current); setHover(false); };
+  const enter = () => setHover(true);
+  const leave = () => setHover(false);
   const contact = async () => {
     if (!canContact) { openProperty(p.id); return; }
     setState("busy");
@@ -278,7 +277,7 @@ function PropertyCard({ p, tier, openProperty }: { p: PropRow; tier: "anon" | "a
   return (
     <div className={`relative ${hover ? "z-30" : ""}`} onMouseEnter={enter} onMouseLeave={leave}>
       {/* base */}
-      <article className={`soft overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white transition ${hover ? "opacity-0" : "opacity-100"}`}>
+      <article className={`soft overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white ${hover ? "opacity-0" : ""}`}>
         <div className="relative h-56 overflow-hidden">
           {p.media?.[0]?.url || p.image ? <img src={p.media?.[0]?.url ?? p.image} alt={p.title} loading="lazy" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-gradient-to-br from-emerald-200 to-teal-300" />}
           <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold capitalize text-stone-700 backdrop-blur">{p.type}</span>
@@ -293,7 +292,7 @@ function PropertyCard({ p, tier, openProperty }: { p: PropRow; tier: "anon" | "a
 
       {/* overlay semi-completo, superpuesto */}
       {hover && (
-        <div className="animate-fadeUp absolute left-1/2 top-0 w-[118%] -translate-x-1/2 -translate-y-4">
+        <div className="absolute left-1/2 top-0 w-[112%] -translate-x-1/2 -translate-y-4">
           <article className="soft-lg group overflow-hidden rounded-[1.75rem] border border-stone-200 bg-white">
             <div className="relative h-64 overflow-hidden">
               <MediaCarousel media={p.media} image={p.image} className="h-full" />

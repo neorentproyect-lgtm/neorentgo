@@ -37,4 +37,12 @@ body {
 .soft-lg { box-shadow: 0 24px 60px -18px rgba(31, 26, 20, 0.18); }
 
 ::selection { background: rgba(16, 185, 129, 0.18); }
-* { scrollbar-width: thin; scrollbar-color: #d8d4cc transparent; }
+
+/* Scrollbar minimalista estilo Apple HIG — todos los navegadores, todas las páginas */
+* { scrollbar-width: thin; scrollbar-color: rgba(60, 60, 67, 0.45) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(60, 60, 67, 0.38); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(60, 60, 67, 0.6); background-clip: content-box; }
+::-webkit-scrollbar-thumb:active { background: rgba(60, 60, 67, 0.78); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
