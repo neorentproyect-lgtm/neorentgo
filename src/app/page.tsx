@@ -452,15 +452,15 @@ function DniModal({ onClose }: { onClose: () => void }) {
   const up = (k: keyof typeof f) => (v: string) => { setF({ ...f, [k]: v }); setErr(""); };
   const submit = async () => {
     if (!f.nombre || !f.apellido || !f.dni || !f.cuil) { setErr("Completá nombre, apellido, DNI y CUIL."); return; }
-    if (!front || !back) { setErr("Subí la foto del frente y del dorso del DNI."); return; }
     setBusy(true); setErr("");
-    const [pf, pb] = await Promise.all([uploadKyc(front, "front"), uploadKyc(back, "back")]);
-    if (!pf || !pb) { setBusy(false); setErr("No se pudieron subir las imágenes. Reintentá."); return; }
+    let pf: string | undefined, pb: string | undefined;
+    if (front) pf = (await uploadKyc(front, "front")) ?? undefined;
+    if (back) pb = (await uploadKyc(back, "back")) ?? undefined;
     await submitValidation({ name: `${f.nombre} ${f.apellido}`.trim(), dni: f.dni, cuil: f.cuil, nacimiento: f.nacimiento, origen: f.origen, residencia: f.residencia, dni_front: pf, dni_back: pb });
     onClose();
   };
   return (
-    <ModalShell title="Validar cuenta global" subtitle="Subí las fotos de tu DNI. Se guardan cifradas y las revisa el sistema para habilitar tus funciones." onClose={onClose}>
+    <ModalShell title="Validar cuenta global" subtitle="Cargá tus datos. Las fotos del DNI son opcionales por ahora (pronto sumamos OCR); si las subís, se guardan cifradas y las revisa el sistema." onClose={onClose}>
       <div className="mt-5 grid grid-cols-2 gap-3">
         <Field label="Nombre" value={f.nombre} onChange={up("nombre")} placeholder="Maxi" />
         <Field label="Segundo nombre (opc.)" value={f.segundo} onChange={up("segundo")} />
@@ -472,8 +472,8 @@ function DniModal({ onClose }: { onClose: () => void }) {
         <Field label="CUIL" value={f.cuil} onChange={up("cuil")} placeholder="20-40123456-3" />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <FileDrop label="Foto del frente" file={front} onFile={(x) => { setFront(x); setErr(""); }} />
-        <FileDrop label="Foto del dorso" file={back} onFile={(x) => { setBack(x); setErr(""); }} />
+        <FileDrop label="Frente (opcional)" file={front} onFile={(x) => { setFront(x); setErr(""); }} />
+        <FileDrop label="Dorso (opcional)" file={back} onFile={(x) => { setBack(x); setErr(""); }} />
       </div>
       {err && <p className="mt-3 text-xs text-rose-500">{err}</p>}
       <div className="mt-6 flex gap-3"><button onClick={onClose} className="flex-1 rounded-xl border border-stone-200 py-3 text-sm font-semibold text-stone-600 hover:bg-stone-50">Cancelar</button><button onClick={submit} disabled={busy} className="flex-1 rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60">{busy ? "Subiendo…" : "Enviar a validación"}</button></div>
