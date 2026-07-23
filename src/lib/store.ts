@@ -6,7 +6,7 @@ import { supabase, userToEmail } from "./supabase";
 export interface Profile { id: string; username: string; name: string; roles: string[]; validated: boolean }
 export interface ValRequest { id: string; user_id: string; name: string; dni: string; cuil: string; nacimiento: string; origen: string; residencia: string; status: string; created_at: string; dni_front?: string; dni_back?: string }
 export interface PropMedia { url: string; kind: string; position: number }
-export interface PropRow { id: string; owner_id: string; title: string; type: string; zona: string; address: string; price: number; status: string; created_at: string; image?: string; rating?: number; beds?: number; baths?: number; m2?: number; cochera?: boolean; agent?: string; media?: PropMedia[] }
+export interface PropRow { id: string; owner_id: string; title: string; type: string; zona: string; address: string; price: number; status: string; created_at: string; image?: string; rating?: number; beds?: number; baths?: number; m2?: number; cochera?: boolean; agent?: string; source?: string; media?: PropMedia[] }
 
 async function fetchProfile(id: string): Promise<Profile | null> {
   const { data } = await supabase.from("profiles").select("*").eq("id", id).single();
@@ -266,6 +266,34 @@ export function useAllProperties(): PropRow[] {
     const load = async () => { const { data } = await supabase.from("properties").select("*").order("created_at", { ascending: false }); setRows((data as PropRow[]) ?? []); };
     load();
     const ch = supabase.channel("allprops").on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  return rows;
+}
+
+export interface AuditEvent { id: number; actor: string | null; actor_label: string | null; action: string; entity: string; entity_id: string | null; meta: Record<string, unknown>; at: string }
+export function useAudit(limit = 50): AuditEvent[] {
+  const [rows, setRows] = useState<AuditEvent[]>([]);
+  useEffect(() => {
+    const load = async () => { const { data } = await supabase.from("audit_events").select("*").order("at", { ascending: false }).limit(limit); setRows((data as AuditEvent[]) ?? []); };
+    load();
+    const ch = supabase.channel("audit").on("postgres_changes", { event: "INSERT", schema: "public", table: "audit_events" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [limit]);
+  return rows;
+}
+
+export interface AdminUserRow { id: string; username: string; name: string; email: string | null; provider: string; roles: string[]; validated: boolean; source: string; created_at: string; last_sign_in: string | null; props_count: number; apps_count: number }
+export function useAdminUsers(): AdminUserRow[] {
+  const [rows, setRows] = useState<AdminUserRow[]>([]);
+  useEffect(() => {
+    const load = async () => { const { data } = await supabase.rpc("admin_users"); setRows((data as AdminUserRow[]) ?? []); };
+    load();
+    const ch = supabase.channel("adminusers")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "applications" }, () => load())
+      .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
   return rows;
