@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PropRow, ValRequest, amIAdmin, kycSignedUrl, resolveProperty, resolveValidation, signInWithGoogle, signOutUser, useAdminStats, usePendingApprovals, useProfile, useRecentEvents } from "@/lib/store";
+import { PropRow, ValRequest, amIAdmin, kycSignedUrl, resolveProperty, resolveValidation, signInWithGoogle, signOutUser, useAdminStats, useAllProperties, useAllUsers, usePendingApprovals, useProfile, useRecentEvents } from "@/lib/store";
 
 type Kind = "dni" | "propiedad";
 const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
@@ -50,6 +50,8 @@ function Dashboard() {
   const { vals, props } = usePendingApprovals(true);
   const st = useAdminStats();
   const events = useRecentEvents();
+  const users = useAllUsers();
+  const allProps = useAllProperties();
   const [clock, setClock] = useState(nowClock());
   const [registry, setRegistry] = useState<{ id: string; action: string; time: string }[]>([]);
   const idRef = useRef(0);
@@ -64,7 +66,7 @@ function Dashboard() {
     ...props.map((p: PropRow): Row => ({ key: p.id, kind: "propiedad", title: p.title, subtitle: `${p.zona ?? ""} · ${fmt(p.price)}`, resolve: (ok) => { resolveProperty(p.id, ok); log(`${ok ? "Habilitó" : "Rechazó"} propiedad · ${p.title}`); } })),
   ];
 
-  const stats: [string, number][] = [["Usuarios", st.usuarios], ["Propiedades activas", st.activas], ["Candidatos", st.candidatos], ["En aprobación", rows.length]];
+  const stats: [string, number][] = [["Usuarios", st.usuarios], ["Validados", st.validados], ["Propiedades activas", st.activas], ["En aprobación", rows.length]];
   const kindClass: Record<Kind, string> = { dni: "bg-violet-100 text-violet-700", propiedad: "bg-sky-100 text-sky-700" };
   const toneClass = { info: "text-sky-600", ok: "text-emerald-600", warn: "text-amber-600" };
   const toneDot = { info: "bg-sky-500", ok: "bg-emerald-500", warn: "bg-amber-500" };
@@ -113,6 +115,42 @@ function Dashboard() {
             </div>
           </section>
         </div>
+
+        <section className="mt-10">
+          <h2 className="mb-4 font-display text-xl font-semibold text-stone-900">Usuarios <span className="text-stone-400">({users.length})</span></h2>
+          <div className="soft overflow-hidden rounded-2xl border border-stone-200 bg-white">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-stone-100 text-left text-[11px] uppercase tracking-wide text-stone-400"><th className="px-4 py-2.5 font-semibold">Usuario</th><th className="px-4 py-2.5 font-semibold">Validación</th><th className="px-4 py-2.5 font-semibold">Roles</th><th className="px-4 py-2.5 font-semibold">Alta</th></tr></thead>
+              <tbody>
+                {users.length === 0 && <tr><td colSpan={4} className="px-4 py-5 text-stone-500">Sin usuarios.</td></tr>}
+                {users.map((u) => (<tr key={u.id} className="border-b border-stone-100 last:border-0">
+                  <td className="px-4 py-3"><p className="font-medium text-stone-800">{u.name}</p><p className="text-xs text-stone-400">@{u.username}</p></td>
+                  <td className="px-4 py-3">{u.validated ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Validado</span> : <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-semibold text-stone-500">Sin validar</span>}</td>
+                  <td className="px-4 py-3">{u.roles.length ? <div className="flex flex-wrap gap-1">{u.roles.map((r) => <span key={r} className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium capitalize text-stone-600">{r}</span>)}</div> : <span className="text-xs text-stone-400">—</span>}</td>
+                  <td className="px-4 py-3 text-xs tabular-nums text-stone-400">{new Date(u.created_at).toLocaleDateString("es-AR")}</td>
+                </tr>))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="mt-8">
+          <h2 className="mb-4 font-display text-xl font-semibold text-stone-900">Propiedades <span className="text-stone-400">({allProps.length})</span></h2>
+          <div className="soft overflow-hidden rounded-2xl border border-stone-200 bg-white">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-stone-100 text-left text-[11px] uppercase tracking-wide text-stone-400"><th className="px-4 py-2.5 font-semibold">Título</th><th className="px-4 py-2.5 font-semibold">Zona</th><th className="px-4 py-2.5 font-semibold">Estado</th><th className="px-4 py-2.5 font-semibold">Precio</th></tr></thead>
+              <tbody>
+                {allProps.length === 0 && <tr><td colSpan={4} className="px-4 py-5 text-stone-500">Sin propiedades.</td></tr>}
+                {allProps.map((p) => (<tr key={p.id} className="border-b border-stone-100 last:border-0">
+                  <td className="px-4 py-3"><p className="font-medium text-stone-800">{p.title}</p><p className="text-xs capitalize text-stone-400">{p.type}</p></td>
+                  <td className="px-4 py-3 text-stone-600">{p.zona}</td>
+                  <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${p.status === "active" ? "bg-emerald-100 text-emerald-700" : p.status === "pending" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>{p.status === "active" ? "Publicada" : p.status === "pending" ? "En revisión" : "Rechazada"}</span></td>
+                  <td className="px-4 py-3 font-medium text-stone-700 tabular-nums">{fmt(p.price)}</td>
+                </tr>))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </div>
   );

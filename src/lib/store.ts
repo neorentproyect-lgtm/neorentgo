@@ -225,29 +225,50 @@ export async function resolveApplication(id: string, status: "accepted" | "rejec
 }
 
 /* ---------- ADMIN: stats y eventos REALES ---------- */
-export function useAdminStats(): { usuarios: number; activas: number; candidatos: number; enAprobacion: number } {
-  const [s, setS] = useState({ usuarios: 0, activas: 0, candidatos: 0, enAprobacion: 0 });
+export function useAdminStats(): { usuarios: number; validados: number; activas: number; enAprobacion: number } {
+  const [s, setS] = useState({ usuarios: 0, validados: 0, activas: 0, enAprobacion: 0 });
   useEffect(() => {
     const load = async () => {
-      const [u, a, c, pv, pp] = await Promise.all([
+      const [u, v, a, pv, pp] = await Promise.all([
         supabase.from("profiles").select("*", { count: "exact", head: true }),
+        supabase.from("profiles").select("*", { count: "exact", head: true }).eq("validated", true),
         supabase.from("properties").select("*", { count: "exact", head: true }).eq("status", "active"),
-        supabase.from("applications").select("*", { count: "exact", head: true }),
         supabase.from("validation_requests").select("*", { count: "exact", head: true }).eq("status", "pending"),
         supabase.from("properties").select("*", { count: "exact", head: true }).eq("status", "pending"),
       ]);
-      setS({ usuarios: u.count ?? 0, activas: a.count ?? 0, candidatos: c.count ?? 0, enAprobacion: (pv.count ?? 0) + (pp.count ?? 0) });
+      setS({ usuarios: u.count ?? 0, validados: v.count ?? 0, activas: a.count ?? 0, enAprobacion: (pv.count ?? 0) + (pp.count ?? 0) });
     };
     load();
     const ch = supabase.channel("stats")
       .on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "validation_requests" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "applications" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
   return s;
+}
+
+export interface AdminUser { id: string; username: string; name: string; roles: string[]; validated: boolean; created_at: string }
+export function useAllUsers(): AdminUser[] {
+  const [rows, setRows] = useState<AdminUser[]>([]);
+  useEffect(() => {
+    const load = async () => { const { data } = await supabase.from("profiles").select("id,username,name,roles,validated,created_at").order("created_at", { ascending: false }); setRows((data as AdminUser[]) ?? []); };
+    load();
+    const ch = supabase.channel("allusers").on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  return rows;
+}
+export function useAllProperties(): PropRow[] {
+  const [rows, setRows] = useState<PropRow[]>([]);
+  useEffect(() => {
+    const load = async () => { const { data } = await supabase.from("properties").select("*").order("created_at", { ascending: false }); setRows((data as PropRow[]) ?? []); };
+    load();
+    const ch = supabase.channel("allprops").on("postgres_changes", { event: "*", schema: "public", table: "properties" }, () => load()).subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+  return rows;
 }
 
 export interface RecentEvent { id: string; text: string; tone: "info" | "ok" | "warn"; at: string }
